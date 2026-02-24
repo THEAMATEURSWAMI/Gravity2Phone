@@ -10,10 +10,42 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Create google-services.json
+        shell: python
         run: |
-          mkdir -p app/android/app
-          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | tr -d ' \n\r' > decoded.txt
-          base64 -d decoded.txt > app/android/app/google-services.json
+          import base64
+          import os
+          import sys
+
+          secret = os.environ.get("SECRET_DATA", "").strip()
+          if not secret:
+              print("Error: GOOGLE_SERVICES_JSON secret is empty")
+              sys.exit(1)
+          
+          try:
+              if secret.startswith("{"):
+                  data = secret.encode("utf-8")
+                  print("Detected raw JSON format")
+              else:
+                  secret = "".join(secret.split())
+                  data = base64.b64decode(secret, validate=True)
+                  print("Detected base64 format")
+              
+              os.makedirs("app/android/app", exist_ok=True)
+              with open("app/android/app/google-services.json", "wb") as f:
+                  f.write(data)
+              print("Successfully created google-services.json")
+          except Exception as e:
+              print(f"Error processing secret: {e}")
+              # Fallback: maybe it's partially corrupted or weirdly formatted, try without validate
+              try:
+                  data = base64.b64decode(secret)
+                  with open("app/android/app/google-services.json", "wb") as f:
+                      f.write(data)
+                  print("Created using fallback base64")
+              except:
+                  sys.exit(1)
+        env:
+          SECRET_DATA: ${{ secrets.GOOGLE_SERVICES_JSON }}
       
       - name: Setup Java
         uses: actions/setup-java@v4
