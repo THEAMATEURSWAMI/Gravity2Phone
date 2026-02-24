@@ -51,6 +51,7 @@ else:
 # In-memory job store (Phase 1 — upgradeable to Redis in Phase 4)
 # ─────────────────────────────────────────────────────────────────────────────
 jobs: dict[str, dict] = {}
+monitored_workflows: dict[int, str] = {} # workflow_id: last_status
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App
@@ -116,6 +117,10 @@ class WorkflowRun(BaseModel):
     repo: str
     url: str
     created_at: str
+
+class IntentRequest(BaseModel):
+    intent: str
+    params: Optional[dict] = {}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification Helper
@@ -195,6 +200,33 @@ async def _run_command(job_id: str, command: str, cwd: Optional[str]):
         )
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Intent Engine
+# ─────────────────────────────────────────────────────────────────────────────
+async def handle_intent(intent: str, params: dict, background_tasks: BackgroundTasks):
+    """Map natural language intents to complex shell scripts."""
+    if intent == "update-site":
+        # The ultimate multi-step deploy workflow
+        command = "git pull; npm install; npm run build; firebase deploy"
+        
+        # We run this in the background and notify when done
+        job_id = str(uuid.uuid4())
+        jobs[job_id] = {"status": "queued", "result": None}
+        
+        async def deploy_with_notify(jid: str, cmd: str):
+            await send_ding("🚀 Deployment Started", "Executing site update pipeline...")
+            await _run_command(jid, cmd, None)
+            result = jobs[jid]["result"]
+            if jobs[jid]["status"] == "done":
+                await send_ding("✅ Deployment Success", "Your site is live!")
+            else:
+                await send_ding("❌ Deployment Failed", f"Error code: {result.exit_code}")
+
+        background_tasks.add_task(deploy_with_notify, job_id, command)
+        return {"status": "started", "job_id": job_id}
+    
+    return {"status": "unknown_intent"}
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["System"])
@@ -220,6 +252,15 @@ async def run_command_endpoint(req: CommandRequest, background_tasks: Background
     else:
         await _run_command(job_id, req.command, req.working_dir)
         return JobStatus(job_id=job_id, status=jobs[job_id]["status"], result=jobs[job_id]["result"])
+
+
+@app.post("/intent", tags=["Execution"], dependencies=[Depends(verify_token)])
+async def intent_endpoint(req: IntentRequest, background_tasks: BackgroundTasks):
+    """Higher-level endpoint for spoken intents like 'update the site'."""
+    result = await handle_intent(req.intent, req.params or {}, background_tasks)
+    if result["status"] == "unknown_intent":
+        raise HTTPException(status_code=400, detail="Unknown intent.")
+    return result
 
 
 @app.get("/jobs/{job_id}", response_model=JobStatus, tags=["Execution"], dependencies=[Depends(verify_token)])
@@ -279,6 +320,60 @@ async def get_github_workflows(owner: str, repo: str):
             return runs
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
+
+
+async def monitor_workflows_task():
+    """Background task to poll GitHub for workflow completion and send Dings."""
+    if not GITHUB_TOKEN or not firebase_admin._apps:
+        return
+
+    # This is a simplified poller. In a real app, you'd use webhooks or a more robust scheduler.
+    while True:
+        try:
+            # We check recently seen workflows. This is just an example for the "Gravity2Phone" repo.
+            # In Phase 4, we'll make this configurable per user/org.
+            owner = "THEAMATEURSWAMI"
+            repo = "Gravity2Phone"
+            
+            url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs?per_page=5"
+            headers = {
+                "Authorization": f"token {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json"
+            }
+            
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for run in data.get("workflow_runs", []):
+                        run_id = run["id"]
+                        status = run["status"]
+                        conclusion = run["conclusion"]
+                        
+                        # If it was running and now it's completed
+                        if run_id in monitored_workflows and status == "completed":
+                            last_status = monitored_workflows[run_id]
+                            if last_status != "completed":
+                                icon = "✅" if conclusion == "success" else "❌"
+                                await send_ding(
+                                    title=f"Workflow {icon}",
+                                    body=f"{repo}: {run['name']} finished with {conclusion}."
+                                )
+                                monitored_workflows[run_id] = "completed"
+                        
+                        # Track currently running ones
+                        elif status != "completed":
+                            monitored_workflows[run_id] = status
+
+        except Exception as e:
+            print(f"Error in workflow monitor: {e}")
+            
+        await asyncio.sleep(60) # Poll every minute
+
+
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(monitor_workflows_task())
 
 
 @app.delete("/jobs/{job_id}", tags=["Execution"], dependencies=[Depends(verify_token)])

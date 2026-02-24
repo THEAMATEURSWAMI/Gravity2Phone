@@ -36,7 +36,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         _lastWords = result.recognizedWords;
       });
       if (result.finalResult && _lastWords.isNotEmpty) {
-        ref.read(agentProvider.notifier).executeCommand(_lastWords);
+        final phrase = _lastWords.toLowerCase();
+        if (phrase.contains('update') && (phrase.contains('site') || phrase.contains('website'))) {
+          ref.read(agentProvider.notifier).executeIntent('update-site');
+        } else {
+          ref.read(agentProvider.notifier).executeCommand(_lastWords);
+        }
       }
     });
     setState(() {});

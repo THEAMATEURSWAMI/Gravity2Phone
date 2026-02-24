@@ -105,4 +105,32 @@ class AgentNotifier extends StateNotifier<AgentState> {
       state = state.copyWith(isExecuting: false, lastOutput: 'Connection failed: $e');
     }
   }
+
+  Future<void> executeIntent(String intent, {Map<String, dynamic>? params}) async {
+    if (state.url.isEmpty || state.token.isEmpty) return;
+    
+    state = state.copyWith(isExecuting: true, lastOutput: 'Triggering Workflow: $intent...');
+    
+    try {
+      final response = await http.post(
+        Uri.parse('${state.url}/intent'),
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Token': state.token,
+        },
+        body: jsonEncode({
+          'intent': intent,
+          'params': params ?? {},
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        state = state.copyWith(isExecuting: false, lastOutput: 'Workflow $intent started successfully. Check notifications.');
+      } else {
+        state = state.copyWith(isExecuting: false, lastOutput: 'Error triggering intent: ${response.statusCode}');
+      }
+    } catch (e) {
+      state = state.copyWith(isExecuting: false, lastOutput: 'Connection failed: $e');
+    }
+  }
 }
