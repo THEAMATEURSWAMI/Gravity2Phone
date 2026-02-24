@@ -3,10 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-final agentProvider = StateNotifierProvider<AgentNotifier, AgentState>((ref) {
-  return AgentNotifier();
-});
-
 class AgentState {
   final String url;
   final String token;
@@ -38,6 +34,10 @@ class AgentState {
     );
   }
 }
+
+final agentProvider = StateNotifierProvider<AgentNotifier, AgentState>((ref) {
+  return AgentNotifier();
+});
 
 class AgentNotifier extends StateNotifier<AgentState> {
   AgentNotifier() : super(AgentState(url: '', token: '')) {

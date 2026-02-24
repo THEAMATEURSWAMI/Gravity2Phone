@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../providers/agent_provider.dart';
 import '../providers/push_provider.dart';
 import 'settings_screen.dart';
@@ -66,8 +67,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         children: [
           // Background Glow
           Positioned(
-            top: -100,
-            right: -100,
+            top: -100.0,
+            right: -100.0,
             child: Container(
               width: 300,
               height: 300,
@@ -75,7 +76,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 shape: BoxShape.circle,
                 color: theme.colorScheme.primary.withOpacity(0.05),
               ),
-            ).animate(onPlay: (c) => c.repeat()).blur(begin: 50, end: 100),
+            ).animate(onPlay: (c) => c.repeat()).blur(begin: const Offset(50.0, 50.0), end: const Offset(100.0, 100.0)),
           ),
 
           SafeArea(
@@ -88,22 +89,25 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'ANTIGRAVITY',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              letterSpacing: 4,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.primary,
+                      Flexible(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'ANTIGRAVITY',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                letterSpacing: 4,
+                                fontWeight: FontWeight.bold,
+                                color: theme.colorScheme.primary,
+                              ),
+                              overflow: TextOverflow.ellipsis,
                             ),
-                          ),
-                          const Text(
-                            'Bridge Active',
-                            style: TextStyle(fontSize: 12, color: Colors.white54),
-                          ),
-                        ],
+                            const Text(
+                              'Bridge Active',
+                              style: TextStyle(fontSize: 12, color: Colors.white54),
+                            ),
+                          ],
+                        ),
                       ),
                       Row(
                         children: [

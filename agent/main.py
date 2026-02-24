@@ -117,7 +117,18 @@ class WorkflowRun(BaseModel):
     conclusion: Optional[str]
     repo: str
     url: str
+    visibility: str # "public" or "private"
     created_at: str
+
+class GitHubRepo(BaseModel):
+    id: int
+    name: str
+    full_name: str
+    owner: str
+    is_org: bool
+    visibility: str # "public" or "private"
+    description: Optional[str]
+    url: str
 
 class IntentRequest(BaseModel):
     intent: str
@@ -345,26 +356,98 @@ async def approve_endpoint(approval_id: str, accept: bool):
     return {"status": "success", "accepted": accept}
 
 
+@app.get("/repos", tags=["GitHub"], dependencies=[Depends(verify_token)])
+async def list_github_repos():
+    """List all repos for the authenticated user across personal + org accounts."""
+    if not GITHUB_TOKEN:
+        raise HTTPException(status_code=400, detail="GITHUB_TOKEN not configured on agent.")
+
+    gh_headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+
+    async with httpx.AsyncClient() as client:
+        try:
+            # 1. Fetch personal repos
+            personal_resp = await client.get(
+                "https://api.github.com/user/repos?per_page=100&sort=updated&type=owner",
+                headers=gh_headers
+            )
+            personal_resp.raise_for_status()
+
+            repos = []
+            for r in personal_resp.json():
+                repos.append(GitHubRepo(
+                    id=r["id"],
+                    name=r["name"],
+                    full_name=r["full_name"],
+                    owner=r["owner"]["login"],
+                    is_org=False,
+                    visibility=r.get("visibility", "private"),
+                    description=r.get("description"),
+                    url=r["html_url"],
+                ))
+
+            # 2. Fetch org repos
+            orgs_resp = await client.get("https://api.github.com/user/orgs?per_page=100", headers=gh_headers)
+            orgs_resp.raise_for_status()
+            for org in orgs_resp.json():
+                org_login = org["login"]
+                org_repos_resp = await client.get(
+                    f"https://api.github.com/orgs/{org_login}/repos?per_page=100&sort=updated",
+                    headers=gh_headers
+                )
+                if org_repos_resp.status_code == 200:
+                    for r in org_repos_resp.json():
+                        repos.append(GitHubRepo(
+                            id=r["id"],
+                            name=r["name"],
+                            full_name=r["full_name"],
+                            owner=org_login,
+                            is_org=True,
+                            visibility=r.get("visibility", "private"),
+                            description=r.get("description"),
+                            url=r["html_url"],
+                        ))
+
+            return sorted(repos, key=lambda x: x.full_name.lower())
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/workflows", tags=["GitHub"], dependencies=[Depends(verify_token)])
 async def get_github_workflows(owner: str, repo: str):
     """Fetch recent workflow runs from GitHub for a specific repository."""
     if not GITHUB_TOKEN:
         raise HTTPException(status_code=400, detail="GITHUB_TOKEN not configured on agent.")
-    
-    url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs?per_page=10"
-    headers = {
+
+    gh_headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
         "Accept": "application/vnd.github.v3+json"
     }
-    
+
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            data = resp.json()
-            
+            # Get repo metadata for visibility
+            repo_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}", headers=gh_headers
+            )
+            visibility = repo_resp.json().get("visibility", "public") if repo_resp.status_code == 200 else "public"
+
+            # Get workflow runs
+            runs_resp = await client.get(
+                f"https://api.github.com/repos/{owner}/{repo}/actions/runs?per_page=10",
+                headers=gh_headers
+            )
+            if runs_resp.status_code == 401:
+                raise HTTPException(status_code=401, detail="GitHub Token is invalid or expired. Update .env.")
+            runs_resp.raise_for_status()
+
             runs = []
-            for run in data.get("workflow_runs", []):
+            for run in runs_resp.json().get("workflow_runs", []):
                 runs.append(WorkflowRun(
                     id=run["id"],
                     name=run["name"],
@@ -372,9 +455,12 @@ async def get_github_workflows(owner: str, repo: str):
                     conclusion=run["conclusion"],
                     repo=f"{owner}/{repo}",
                     url=run["html_url"],
+                    visibility=visibility,
                     created_at=run["created_at"]
                 ))
             return runs
+        except httpx.HTTPStatusError as e:
+            raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
         except Exception as e:
             raise HTTPException(status_code=500, detail=str(e))
 
@@ -385,14 +471,12 @@ async def monitor_workflows_task():
         return
 
     # This is a simplified poller. In a real app, you'd use webhooks or a more robust scheduler.
+    GITHUB_OWNER = os.getenv("GITHUB_OWNER", "THEAMATEURSWAMI")
+    GITHUB_REPO = os.getenv("GITHUB_REPO", "Gravity2Phone")
+
     while True:
         try:
-            # We check recently seen workflows. This is just an example for the "Gravity2Phone" repo.
-            # In Phase 4, we'll make this configurable per user/org.
-            owner = "THEAMATEURSWAMI"
-            repo = "Gravity2Phone"
-            
-            url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs?per_page=5"
+            url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/runs?per_page=5"
             headers = {
                 "Authorization": f"token {GITHUB_TOKEN}",
                 "Accept": "application/vnd.github.v3+json"
@@ -414,7 +498,7 @@ async def monitor_workflows_task():
                                 icon = "✅" if conclusion == "success" else "❌"
                                 await send_ding(
                                     title=f"Workflow {icon}",
-                                    body=f"{repo}: {run['name']} finished with {conclusion}."
+                                    body=f"{GITHUB_REPO}: {run['name']} finished with {conclusion}."
                                 )
                                 monitored_workflows[run_id] = "completed"
                         
@@ -440,3 +524,9 @@ async def clear_job(job_id: str):
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
     del jobs[job_id]
     return {"deleted": job_id}
+
+if __name__ == "__main__":
+    import uvicorn
+    host = os.getenv("AGENT_HOST", "0.0.0.0")
+    port = int(os.getenv("AGENT_PORT", "8742"))
+    uvicorn.run(app, host=host, port=port)

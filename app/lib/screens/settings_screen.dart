@@ -67,8 +67,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   );
                   if (mounted) Navigator.pop(context);
                 },
-                style: ElevatedButton.fromMaterialScheme(
-                  Theme.of(context).colorScheme.primaryContainer,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Theme.of(context).colorScheme.primaryContainer,
+                  foregroundColor: Theme.of(context).colorScheme.onPrimaryContainer,
                 ),
                 child: const Text('Save and Connect'),
               ),
