@@ -7,6 +7,7 @@ venv/
 
 # Firebase
 service-account.json
+*.json
 
 # Flutter
 .dart_tool/
