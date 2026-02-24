@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -57,8 +58,26 @@ final agentProvider = StateNotifierProvider<AgentNotifier, AgentState>((ref) {
 });
 
 class AgentNotifier extends StateNotifier<AgentState> {
+  Timer? _pollingTimer;
+
   AgentNotifier() : super(AgentState(url: '', token: '')) {
     _loadConfig();
+    _startPolling();
+  }
+
+  void _startPolling() {
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+       if (state.url.isNotEmpty && state.isConnected) {
+          checkConnection();
+       }
+    });
+  }
+
+  @override
+  void dispose() {
+    _pollingTimer?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadConfig() async {
