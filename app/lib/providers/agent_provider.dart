@@ -47,9 +47,9 @@ class AgentState {
   final bool isConnected;
   final bool isExecuting;
   final String? activeRepo; 
-  final String activeChatId;
   final String activeModel;
   final String? deviceName;
+  final String deviceIcon; // 'computer', 'pi', 'arduino', 'mobile'
   final Map<String, dynamic>? activeBuild;
 
   AgentState({
@@ -61,6 +61,7 @@ class AgentState {
     this.activeChatId = 'main',
     this.activeModel = 'gemini-1.5-flash',
     this.deviceName,
+    this.deviceIcon = 'computer',
     this.activeBuild,
   });
 
@@ -73,6 +74,7 @@ class AgentState {
     String? activeChatId,
     String? activeModel,
     String? deviceName,
+    String? deviceIcon,
     Map<String, dynamic>? activeBuild,
     bool clearBuild = false,
   }) {
@@ -85,6 +87,7 @@ class AgentState {
       activeChatId: activeChatId ?? this.activeChatId,
       activeModel: activeModel ?? this.activeModel,
       deviceName: deviceName ?? this.deviceName,
+      deviceIcon: deviceIcon ?? this.deviceIcon,
       activeBuild: clearBuild ? null : (activeBuild ?? this.activeBuild),
     );
   }
@@ -153,6 +156,8 @@ class AgentNotifier extends StateNotifier<AgentState> {
     state = state.copyWith(
       url: prefs.getString('agent_url') ?? 'http://100.x.x.x:8742', 
       token: prefs.getString('agent_token') ?? '', 
+      deviceName: prefs.getString('device_name'),
+      deviceIcon: prefs.getString('device_icon') ?? 'computer',
       activeRepo: prefs.getString('active_repo'), 
       activeChatId: prefs.getString('active_chat_id') ?? 'main',
       activeModel: prefs.getString('active_model') ?? 'gemini-1.5-flash',
@@ -160,11 +165,19 @@ class AgentNotifier extends StateNotifier<AgentState> {
     checkConnection();
   }
 
-  Future<void> updateConfig(String url, String token) async {
+  Future<void> updateConfig(String url, String token, {String? name, String? icon}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('agent_url', url);
     await prefs.setString('agent_token', token);
-    state = state.copyWith(url: url, token: token);
+    if (name != null) await prefs.setString('device_name', name);
+    if (icon != null) await prefs.setString('device_icon', icon);
+    
+    state = state.copyWith(
+      url: url, 
+      token: token,
+      deviceName: name ?? state.deviceName,
+      deviceIcon: icon ?? state.deviceIcon,
+    );
     checkConnection();
   }
 

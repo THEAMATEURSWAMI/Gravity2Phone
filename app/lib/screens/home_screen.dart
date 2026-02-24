@@ -172,7 +172,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                padding: const EdgeInsets.only(top: 4),
                                child: Row(
                                  children: [
-                                   Icon(Icons.laptop_chromebook, size: 10, color: theme.colorScheme.primary.withOpacity(0.5)),
+                                   Icon(_getDeviceIcon(agentState.deviceIcon), size: 10, color: theme.colorScheme.primary.withOpacity(0.5)),
                                    const SizedBox(width: 4),
                                    Text(
                                      agentState.deviceName!.toUpperCase(),
@@ -274,7 +274,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.laptop, size: 14, color: theme.colorScheme.primary.withOpacity(0.5)),
+                            Icon(_getDeviceIcon(agentState.deviceIcon), size: 14, color: theme.colorScheme.primary.withOpacity(0.5)),
                             const SizedBox(width: 8),
                             Text(
                               agentState.deviceName ?? 'REMOTE',
@@ -498,6 +498,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         ],
       ),
     );
+  }
+
+  IconData _getDeviceIcon(String type) {
+    switch (type) {
+      case 'pi': return Icons.memory;
+      case 'arduino': return Icons.developer_board;
+      case 'mobile': return Icons.smartphone;
+      default: return Icons.laptop;
+    }
   }
 }
 
