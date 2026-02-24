@@ -584,35 +584,39 @@ async def list_github_repos():
             await agent_log("📡 Fetching user organizations...")
             orgs_resp = await client.get("https://api.github.com/user/orgs?per_page=100", headers=gh_headers)
             if orgs_resp.status_code != 200:
-                await agent_log(f"⚠️ GitHub Organizations failed: {orgs_resp.status_code}", "warning")
-                # Don't fail the whole request if orgs fail, just skip them
-                return sorted(repos, key=lambda x: x.updated_at, reverse=True)
-            
-            orgs_resp.raise_for_status()
-            for org in orgs_resp.json():
-                org_login = org["login"]
-                org_repos_resp = await client.get(
-                    f"https://api.github.com/orgs/{org_login}/repos?per_page=100&sort=updated",
-                    headers=gh_headers
-                )
-                if org_repos_resp.status_code == 200:
-                    for r in org_repos_resp.json():
-                        repos.append(GitHubRepo(
-                            id=r["id"],
-                            name=r["name"],
-                            full_name=r["full_name"],
-                            owner=org_login,
-                            is_org=True,
-                            visibility=r.get("visibility", "private"),
-                            description=r.get("description"),
-                            url=r["html_url"],
-                            updated_at=r.get("updated_at", ""),
-                        ))
+                await agent_log(f"⚠️ GitHub Organizations failed: {orgs_resp.status_code} - {orgs_resp.text}", "warning")
+            else:
+                for org in orgs_resp.json():
+                    org_login = org["login"]
+                    await agent_log(f"📡 Fetching repos for org: {org_login}...")
+                    org_repos_resp = await client.get(
+                        f"https://api.github.com/orgs/{org_login}/repos?per_page=100&sort=updated",
+                        headers=gh_headers
+                    )
+                    if org_repos_resp.status_code == 200:
+                        for r in org_repos_resp.json():
+                            repos.append(GitHubRepo(
+                                id=r["id"],
+                                name=r["name"],
+                                full_name=r["full_name"],
+                                owner=org_login,
+                                is_org=True,
+                                visibility=r.get("visibility", "private"),
+                                description=r.get("description"),
+                                url=r["html_url"],
+                                updated_at=r.get("updated_at", ""),
+                            ))
+                    else:
+                        await agent_log(f"⚠️ Failed to fetch repos for org {org_login}: {org_repos_resp.status_code}", "warning")
 
-            return sorted(repos, key=lambda x: x.updated_at, reverse=True)
+            sorted_repos = sorted(repos, key=lambda x: x.updated_at, reverse=True)
+            await agent_log(f"✅ Found {len(sorted_repos)} total repositories.")
+            return [r.dict() for r in sorted_repos]
         except httpx.HTTPStatusError as e:
+            await agent_log(f"❌ GitHub API Error: {e.response.status_code} - {e.response.text}", "error")
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
         except Exception as e:
+            await agent_log(f"❌ unexpected Error in /repos: {str(e)}", "error")
             raise HTTPException(status_code=500, detail=str(e))
 
 

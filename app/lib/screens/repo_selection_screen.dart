@@ -77,8 +77,9 @@ class _RepoSelectionScreenState extends ConsumerState<RepoSelectionScreen> {
                   padding: const EdgeInsets.all(16),
                   itemCount: _repos.length,
                   itemBuilder: (context, index) {
-                    final repo = _repos[index];
-                    final String repoName = repo.toString();
+                    final repo = _repos[index] as Map<String, dynamic>;
+                    final String repoName = repo['full_name'] ?? 'Unknown Repo';
+                    final String visibility = repo['visibility'] ?? 'public';
                     final bool isSelected = agentState.activeRepo == repoName;
 
                     return Padding(
@@ -105,8 +106,8 @@ class _RepoSelectionScreenState extends ConsumerState<RepoSelectionScreen> {
                           child: Row(
                             children: [
                               Icon(
-                                isSelected ? Icons.check_circle : Icons.folder_outlined,
-                                color: isSelected ? theme.colorScheme.primary : Colors.white38,
+                                isSelected ? Icons.check_circle : (visibility == 'private' ? Icons.lock_outline : Icons.folder_outlined),
+                                color: isSelected ? theme.colorScheme.primary : (visibility == 'private' ? Colors.orangeAccent.withOpacity(0.5) : Colors.white38),
                                 size: 18,
                               ),
                               const SizedBox(width: 16),

@@ -284,10 +284,19 @@ class AgentNotifier extends StateNotifier<AgentState> {
   Future<List<dynamic>> fetchRepos() async {
     if (state.url.isEmpty || state.token.isEmpty) return [];
     try {
-      final resp = await http.get(Uri.parse('${state.url}/repos'), headers: {'X-API-Token': state.token});
-      if (resp.statusCode == 200) return jsonDecode(resp.body);
-    } catch (_) {}
-    return [];
+      final resp = await http.get(
+        Uri.parse('${state.url}/repos'), 
+        headers: {'X-API-Token': state.token}
+      ).timeout(const Duration(seconds: 10));
+
+      if (resp.statusCode == 200) {
+        return jsonDecode(resp.body);
+      } else {
+        throw Exception('Server returned ${resp.statusCode}: ${resp.body}');
+      }
+    } catch (e) {
+      rethrow; // Forward the error to the UI
+    }
   }
 
   Future<void> respondToApproval(String approvalId, bool accept) async {
