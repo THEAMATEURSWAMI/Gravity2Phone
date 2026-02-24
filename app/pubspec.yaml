@@ -2,7 +2,7 @@ name: bridge_app
 description: "A new Flutter project."
 publish_to: 'none'
 
-version: 1.0.1+42
+version: 1.0.1+43
 
 environment:
   sdk: ^3.10.7
@@ -40,6 +40,6 @@ flutter:
 flutter_launcher_icons:
   android: true
   ios: true
-  image_path: "assets/icon.png"
+  image_path: "assets/logo.png"
   adaptive_icon_background: "#0D0D12"
-  adaptive_icon_foreground: "assets/icon.png"
+  adaptive_icon_foreground: "assets/logo.png"
