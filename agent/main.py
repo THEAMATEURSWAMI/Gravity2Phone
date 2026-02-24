@@ -39,6 +39,7 @@ FIREBASE_KEY_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 DEVICE_NAME = os.getenv("DEVICE_NAME", "Remote Bridge Machine")
+PROJECTS_ROOT = os.getenv("PROJECTS_ROOT", os.path.expanduser("~"))
 
 if GEMINI_API_KEY:
     genai.configure(api_key=GEMINI_API_KEY)
@@ -276,20 +277,38 @@ async def request_approval(title: str, body: str, token: Optional[str] = None) -
             del approvals[approval_id]
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Path Resolver
+# ─────────────────────────────────────────────────────────────────────────────
+def resolve_repo_path(context_repo: Optional[str]) -> str:
+    """Resolve a GitHub repo name to a local path in PROJECTS_ROOT."""
+    if not context_repo or "/" not in context_repo:
+        return PROJECTS_ROOT
+    
+    # Extract just the repo name (e.g. Gravity2Phone from THEAMATEURSWAMI/Gravity2Phone)
+    repo_name = context_repo.split("/")[-1]
+    local_path = os.path.join(PROJECTS_ROOT, repo_name)
+    
+    if os.path.exists(local_path):
+        return local_path
+    return PROJECTS_ROOT
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Execution Engine
 # ─────────────────────────────────────────────────────────────────────────────
-async def _run_command(job_id: str, command: str, cwd: Optional[str]):
+async def _run_command(job_id: str, command: str, context_repo: Optional[str] = None):
     """Execute a shell command and store the result in the jobs dict."""
     jobs[job_id]["status"] = "running"
     started_at = datetime.now(timezone.utc)
+    
+    cwd = resolve_repo_path(context_repo)
 
-    await agent_log(f"💻 Executing: {command}")
+    await agent_log(f"💻 Executing [{os.path.basename(cwd)}]: {command}")
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=cwd or os.path.expanduser("~"),
+            cwd=cwd,
             executable=AGENT_SHELL if AGENT_SHELL != "powershell" else None,
         )
         try:
@@ -412,11 +431,11 @@ async def run_command_endpoint(req: CommandRequest, background_tasks: Background
     
     if req.async_run:
         await agent_log(f"⏳ Queued async command{context_str}: {req.command[:30]}...")
-        background_tasks.add_task(_run_command, job_id, req.command, req.working_dir)
+        background_tasks.add_task(_run_command, job_id, req.command, req.context_repo)
         return JobStatus(job_id=job_id, status="queued")
     else:
         await agent_log(f"⚡ Running sync command{context_str}: {req.command[:30]}...")
-        await _run_command(job_id, req.command, req.working_dir)
+        await _run_command(job_id, req.command, req.context_repo)
         return JobStatus(job_id=job_id, status=jobs[job_id]["status"], result=jobs[job_id]["result"])
 
 
@@ -444,7 +463,11 @@ async def gemini_chat(req: ChatRequest):
         # AI prompt log
         await agent_log(f"Prompt: {req.message}", "info", "user")
         
-        response = model.generate_content(prompt)
+        # Inject project context if available
+        cwd = resolve_repo_path(req.context_repo)
+        system_context = f"You are Antigravity, an AI developer assistant. You are currently helping the user with their project at: {cwd}. "
+        
+        response = model.generate_content(system_context + req.message)
         ai_response = response.text.strip()
         
         # Confirmation message with device identity
@@ -463,14 +486,11 @@ async def upload_asset(
 ):
     """Receive an asset (image/file) and save it to the target repository directory."""
     try:
-        # Resolve target directory
-        base_dir = r"c:\Cursor Projects"
-        target_repo = x_context_repo or "General Funsies"
+        # Resolve target directory using our new universal system
+        cwd = resolve_repo_path(x_context_repo)
         
-        # Clean the repo name (split owner/repo if present)
-        clean_repo = target_repo.split("/")[-1]
-        
-        dest_dir = os.path.join(base_dir, clean_repo, "assets")
+        # Assets always go into the 'assets' folder of the project
+        dest_dir = os.path.join(cwd, "assets")
         os.makedirs(dest_dir, exist_ok=True)
         
         file_path = os.path.join(dest_dir, file.filename)

@@ -153,13 +153,19 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'ANTIGRAVITY',
-                            style: theme.textTheme.labelLarge?.copyWith(
-                              letterSpacing: 4,
-                              fontWeight: FontWeight.bold,
-                              color: theme.colorScheme.primary,
-                            ),
+                          Row(
+                            children: [
+                              _MascotAvatar(isThinking: agentState.isExecuting),
+                              const SizedBox(width: 12),
+                              Text(
+                                'ANTIGRAVITY',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  letterSpacing: 4,
+                                  fontWeight: FontWeight.bold,
+                                  color: theme.colorScheme.primary,
+                                ),
+                              ),
+                            ],
                           ),
                           if (agentState.deviceName != null)
                              Padding(
@@ -482,7 +488,34 @@ class _StatusDot extends StatelessWidget {
   }
 }
 
-// ─── Token Meter Components ──────────────────────────────────────────────────
+// ─── Mascot Component ────────────────────────────────────────────────────────
+
+class _MascotAvatar extends StatelessWidget {
+  final bool isThinking;
+  const _MascotAvatar({required this.isThinking});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      height: 28,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withOpacity(0.05),
+        border: Border.all(color: Colors.white.withOpacity(0.1)),
+      ),
+      child: Center(
+        child: Icon(
+          isThinking ? Icons.hourglass_empty : Icons.face_retouching_natural,
+          size: 14,
+          color: isThinking ? Colors.amber : Colors.blueAccent,
+        ).animate(onPlay: (c) => isThinking ? c.repeat() : c.stop()).shimmer(duration: 1.seconds),
+      ),
+    ).animate().scale(delay: 200.ms).fadeIn();
+  }
+}
+
+// ─── Status Circle Component ──────────────────────────────────────────────────
 
 class _TokenPoolsRow extends ConsumerWidget {
   const _TokenPoolsRow();
