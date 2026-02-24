@@ -60,7 +60,7 @@ Home Screen (Hold to Speak)
 
 ## Mobile App Features
 
-- **Hold-to-speak** voice commands → dispatched to agent
+- **Hold-to-speak** voice commands (Bridge icon) → dispatched to agent
 - **Intent recognition** — phrases like "update the site" trigger complex multi-step workflows  
 - **Approval dialogs** — critical commands pause and wait for your tap (Accept / Reject)
 - **GitHub Workflows** — browse all repos (personal + org), see if they're public/private, and watch live run progress

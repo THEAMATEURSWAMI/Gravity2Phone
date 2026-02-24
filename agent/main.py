@@ -57,14 +57,19 @@ jobs: dict[str, dict] = {}
 monitored_workflows: dict[int, str] = {} # workflow_id: last_status
 approvals: dict[str, dict] = {} # approval_id: {"event": asyncio.Event(), "result": bool}
 log_listeners: List[asyncio.Queue] = []
+log_history: List[dict] = []
 
 async def agent_log(message: str, type: str = "info"):
     """Helper to print logs and broadcast them to all connected SSE listeners."""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    formatted = f"[{timestamp}] {message}"
-    print(formatted)
+    print(f"[{timestamp}] {message}")
     
-    log_data = {"type": type, "message": formatted}
+    log_data = {"type": type, "message": message, "timestamp": timestamp}
+    
+    # Store in history
+    log_history.append(log_data)
+    if len(log_history) > 20:
+        log_history.pop(0)
     
     # Broadcast to all active listeners
     for queue in log_listeners[:]: # Using a copy to avoid mutation errors
@@ -380,6 +385,7 @@ async def list_jobs():
 @app.post("/notify", tags=["Notifications"], dependencies=[Depends(verify_token)])
 async def notify_endpoint(req: NotificationRequest):
     """Send a manual push notification to the mobile app."""
+    await agent_log(f"🔔 Manual Notification sent: {req.title}")
     await send_ding(req.title, req.body, req.token)
     return {"status": "sent"}
 
@@ -609,6 +615,11 @@ async def clear_job(job_id: str):
 async def stream_logs(request: Request):
     """Real-time SSE stream of agent logs/chats (Broadcast to all listeners)."""
     queue = asyncio.Queue()
+    
+    # Pre-populate with history so the app session has context
+    for entry in log_history:
+        await queue.put(entry)
+        
     log_listeners.append(queue)
     
     async def event_generator():

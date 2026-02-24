@@ -13,7 +13,7 @@ class LogEntry {
 
   factory LogEntry.fromJson(Map<String, dynamic> json) {
     return LogEntry(
-      timestamp: DateTime.now().toLocal().toString().split(' ')[1].split('.')[0], 
+      timestamp: json['timestamp'] ?? DateTime.now().toLocal().toString().split(' ')[1].split('.')[0], 
       message: json['message'] ?? '',
       type: json['type'] ?? 'info',
     );

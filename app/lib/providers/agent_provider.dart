@@ -7,14 +7,12 @@ class AgentState {
   final String url;
   final String token;
   final bool isConnected;
-  final String? lastOutput;
   final bool isExecuting;
 
   AgentState({
     required this.url,
     required this.token,
     this.isConnected = false,
-    this.lastOutput,
     this.isExecuting = false,
   });
 
@@ -22,14 +20,12 @@ class AgentState {
     String? url,
     String? token,
     bool? isConnected,
-    String? lastOutput,
     bool? isExecuting,
   }) {
     return AgentState(
       url: url ?? this.url,
       token: token ?? this.token,
       isConnected: isConnected ?? this.isConnected,
-      lastOutput: lastOutput ?? this.lastOutput,
       isExecuting: isExecuting ?? this.isExecuting,
     );
   }
@@ -76,7 +72,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
   Future<void> executeCommand(String command) async {
     if (state.url.isEmpty || state.token.isEmpty) return;
     
-    state = state.copyWith(isExecuting: true, lastOutput: 'Executing: $command...');
+    state = state.copyWith(isExecuting: true);
     
     try {
       final response = await http.post(
@@ -90,29 +86,20 @@ class AgentNotifier extends StateNotifier<AgentState> {
           'async_run': false,
         }),
       );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final result = data['result'];
-        final output = result != null 
-          ? (result['stdout'] + '\n' + result['stderr']).trim()
-          : 'Command sent to background.';
-        state = state.copyWith(isExecuting: false, lastOutput: output);
-      } else {
-        state = state.copyWith(isExecuting: false, lastOutput: 'Error: ${response.statusCode}\n${response.body}');
-      }
+      // Results are streamed via LogsProvider, so we just clear execution status
+      state = state.copyWith(isExecuting: false);
     } catch (e) {
-      state = state.copyWith(isExecuting: false, lastOutput: 'Connection failed: $e');
+      state = state.copyWith(isExecuting: false);
     }
   }
 
   Future<void> executeIntent(String intent, {Map<String, dynamic>? params}) async {
     if (state.url.isEmpty || state.token.isEmpty) return;
     
-    state = state.copyWith(isExecuting: true, lastOutput: 'Triggering Workflow: $intent...');
+    state = state.copyWith(isExecuting: true);
     
     try {
-      final response = await http.post(
+      await http.post(
         Uri.parse('${state.url}/intent'),
         headers: {
           'Content-Type': 'application/json',
@@ -123,14 +110,9 @@ class AgentNotifier extends StateNotifier<AgentState> {
           'params': params ?? {},
         }),
       );
-
-      if (response.statusCode == 200) {
-        state = state.copyWith(isExecuting: false, lastOutput: 'Workflow $intent started successfully. Check notifications.');
-      } else {
-        state = state.copyWith(isExecuting: false, lastOutput: 'Error triggering intent: ${response.statusCode}');
-      }
+      state = state.copyWith(isExecuting: false);
     } catch (e) {
-      state = state.copyWith(isExecuting: false, lastOutput: 'Connection failed: $e');
+      state = state.copyWith(isExecuting: false);
     }
   }
 
@@ -145,7 +127,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
         },
       );
     } catch (e) {
-      print('Failed to send approval: $e');
+      // Slient fail for background ops
     }
   }
 }
