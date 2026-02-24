@@ -10,7 +10,12 @@ jobs:
       - uses: actions/checkout@v4
       
       - name: Create google-services.json
-        run: echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > app/android/app/google-services.json
+        run: |
+          if [ -z "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
+            echo "Error: GOOGLE_SERVICES_JSON secret is empty or not set"
+            exit 1
+          fi
+          printf "%s" "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > app/android/app/google-services.json
       
       - name: Setup Java
         uses: actions/setup-java@v4
