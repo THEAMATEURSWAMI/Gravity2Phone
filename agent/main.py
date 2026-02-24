@@ -16,8 +16,11 @@ from datetime import datetime, timezone
 from typing import Optional, List
 import httpx
 
-from fastapi import FastAPI, Depends, HTTPException, Header, status, BackgroundTasks
+import json
+from fastapi import FastAPI, Depends, HTTPException, Header, status, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import firebase_admin
@@ -53,6 +56,17 @@ else:
 jobs: dict[str, dict] = {}
 monitored_workflows: dict[int, str] = {} # workflow_id: last_status
 approvals: dict[str, dict] = {} # approval_id: {"event": asyncio.Event(), "result": bool}
+log_queue = asyncio.Queue()
+
+async def agent_log(message: str, type: str = "info"):
+    """Helper to print logs and send them to the real-time SSE stream."""
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    formatted = f"[{timestamp}] {message}"
+    print(formatted)
+    await log_queue.put({"type": type, "message": formatted})
+
+# Ensure we log the startup
+asyncio.create_task(agent_log("🚀 Antigravity Agent starting up..."))
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App
@@ -76,10 +90,15 @@ app.add_middleware(
 # ─────────────────────────────────────────────────────────────────────────────
 async def verify_token(x_api_token: Optional[str] = Header(default=None)):
     """Verify the secret token sent by the mobile app in every request."""
-    if not x_api_token or x_api_token != API_SECRET_TOKEN:
+    if not x_api_token:
+        await agent_log("❌ Security: Missing X-API-Token header", "error")
+        raise HTTPException(status_code=401, detail="Missing X-API-Token header.")
+    
+    if x_api_token != API_SECRET_TOKEN:
+        await agent_log(f"❌ Security: Invalid Token Attempt (Received: {x_api_token[:5]}...)", "error")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or missing X-API-Token header.",
+            detail="Invalid X-API-Token header.",
         )
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -133,6 +152,14 @@ class GitHubRepo(BaseModel):
 class IntentRequest(BaseModel):
     intent: str
     params: Optional[dict] = {}
+
+class ModelQuota(BaseModel):
+    name: str           # e.g. "Claude 3.5 Sonnet"
+    model_id: str       # e.g. "claude-3-5-sonnet-20240620"
+    used_tokens: int
+    total_tokens: int
+    reset_at: str       # ISO timestamp
+    reset_seconds: int  # Seconds until reset
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification Helper
@@ -203,6 +230,7 @@ async def _run_command(job_id: str, command: str, cwd: Optional[str]):
     jobs[job_id]["status"] = "running"
     started_at = datetime.now(timezone.utc)
 
+    await agent_log(f"💻 Executing: {command}")
     try:
         proc = await asyncio.create_subprocess_shell(
             command,
@@ -233,6 +261,9 @@ async def _run_command(job_id: str, command: str, cwd: Optional[str]):
         )
         jobs[job_id]["status"] = "done" if proc.returncode == 0 else "failed"
         jobs[job_id]["result"] = result
+        
+        status_icon = "✅" if proc.returncode == 0 else "❌"
+        await agent_log(f"{status_icon} Command finished (Exit: {proc.returncode})", "success" if proc.returncode == 0 else "error")
 
     except Exception as exc:
         finished_at = datetime.now(timezone.utc)
@@ -255,6 +286,7 @@ async def handle_intent(intent: str, params: dict, background_tasks: BackgroundT
     """Map natural language intents to complex shell scripts."""
     if intent == "update-site":
         # Example using the new interactive system
+        await agent_log(f"🧠 Intent detected: {intent}")
         should_proceed = await request_approval(
             "🚀 Deployment Request", 
             "Execute 'git pull && npm install && npm run build && firebase deploy'?"
@@ -304,6 +336,7 @@ async def run_command_endpoint(req: CommandRequest, background_tasks: Background
     jobs[job_id] = {"status": "queued", "result": None}
 
     if req.async_run:
+        await agent_log(f"⏳ Queued async command: {req.command[:30]}...")
         background_tasks.add_task(_run_command, job_id, req.command, req.working_dir)
         return JobStatus(job_id=job_id, status="queued")
     else:
@@ -363,17 +396,21 @@ async def list_github_repos():
         raise HTTPException(status_code=400, detail="GITHUB_TOKEN not configured on agent.")
 
     gh_headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "AntigravityBridgeAgent"
     }
 
     async with httpx.AsyncClient() as client:
         try:
             # 1. Fetch personal repos
+            await agent_log("📡 Fetching personal repositories...")
             personal_resp = await client.get(
                 "https://api.github.com/user/repos?per_page=100&sort=updated&type=owner",
                 headers=gh_headers
             )
+            if personal_resp.status_code != 200:
+                await agent_log(f"❌ GitHub Personal Repos failed: {personal_resp.status_code}", "error")
             personal_resp.raise_for_status()
 
             repos = []
@@ -390,7 +427,13 @@ async def list_github_repos():
                 ))
 
             # 2. Fetch org repos
+            await agent_log("📡 Fetching user organizations...")
             orgs_resp = await client.get("https://api.github.com/user/orgs?per_page=100", headers=gh_headers)
+            if orgs_resp.status_code != 200:
+                await agent_log(f"⚠️ GitHub Organizations failed: {orgs_resp.status_code}", "warning")
+                # Don't fail the whole request if orgs fail, just skip them
+                return sorted(repos, key=lambda x: x.full_name.lower())
+            
             orgs_resp.raise_for_status()
             for org in orgs_resp.json():
                 org_login = org["login"]
@@ -425,8 +468,9 @@ async def get_github_workflows(owner: str, repo: str):
         raise HTTPException(status_code=400, detail="GITHUB_TOKEN not configured on agent.")
 
     gh_headers = {
-        "Authorization": f"token {GITHUB_TOKEN}",
-        "Accept": "application/vnd.github.v3+json"
+        "Authorization": f"Bearer {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json",
+        "User-Agent": "AntigravityBridgeAgent"
     }
 
     async with httpx.AsyncClient() as client:
@@ -478,8 +522,9 @@ async def monitor_workflows_task():
         try:
             url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/actions/runs?per_page=5"
             headers = {
-                "Authorization": f"token {GITHUB_TOKEN}",
-                "Accept": "application/vnd.github.v3+json"
+                "Authorization": f"Bearer {GITHUB_TOKEN}",
+                "Accept": "application/vnd.github.v3+json",
+                "User-Agent": "AntigravityBridgeAgent"
             }
             
             async with httpx.AsyncClient() as client:
@@ -517,6 +562,33 @@ async def startup_event():
     asyncio.create_task(monitor_workflows_task())
 
 
+@app.get("/quota", tags=["System"], dependencies=[Depends(verify_token)])
+async def get_model_quota():
+    """Get current token usage and reset timers for AI models."""
+    # In a real app, you'd fetch this from your LLM provider's headers or DB
+    # For now, we return mock data for the UI
+    now = datetime.now(timezone.utc)
+    reset_time = now.replace(hour=now.hour + 1, minute=0, second=0, microsecond=0)
+    
+    return [
+        ModelQuota(
+            name="Claude 3.5 Sonnet",
+            model_id="claude-3-5-sonnet",
+            used_tokens=42500,
+            total_tokens=200000,
+            reset_at=reset_time.isoformat(),
+            reset_seconds=int((reset_time - now).total_seconds())
+        ),
+        ModelQuota(
+            name="GPT-4o",
+            model_id="gpt-4o",
+            used_tokens=8500,
+            total_tokens=30000,
+            reset_at=reset_time.isoformat(),
+            reset_seconds=int((reset_time - now).total_seconds())
+        )
+    ]
+
 @app.delete("/jobs/{job_id}", tags=["Execution"], dependencies=[Depends(verify_token)])
 async def clear_job(job_id: str):
     """Remove a job from the store."""
@@ -524,6 +596,24 @@ async def clear_job(job_id: str):
         raise HTTPException(status_code=404, detail=f"Job {job_id} not found.")
     del jobs[job_id]
     return {"deleted": job_id}
+
+@app.get("/logs", tags=["System"])
+async def stream_logs(request: Request):
+    """Real-time SSE stream of agent logs/chats."""
+    async def event_generator():
+        while True:
+            # Check if client is still connected
+            if await request.is_disconnected():
+                break
+            
+            # Get next log from queue
+            log = await log_queue.get()
+            yield {
+                "event": "log",
+                "data": json.dumps(log)
+            }
+
+    return EventSourceResponse(event_generator())
 
 if __name__ == "__main__":
     import uvicorn

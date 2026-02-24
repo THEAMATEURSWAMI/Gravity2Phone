@@ -72,10 +72,10 @@ Home Screen (Hold to Speak)
 
 **`agent/.env`**
 ```
-API_SECRET_TOKEN=swami_bridge_secret_123
+API_SECRET_TOKEN=your_bridge_secret_here
 GITHUB_TOKEN=<your_PAT>
-GITHUB_OWNER=THEAMATEURSWAMI
-GITHUB_REPO=Gravity2Phone
+GITHUB_OWNER=your_github_username
+GITHUB_REPO=your_repo_name
 AGENT_HOST=0.0.0.0
 AGENT_PORT=8742
 FIREBASE_SERVICE_ACCOUNT_PATH=service-account.json
@@ -83,9 +83,9 @@ FIREBASE_SERVICE_ACCOUNT_PATH=service-account.json
 
 **App Settings** (set in-app)
 ```
-Agent URL:  http://192.168.1.159:8742   (local Wi-Fi)
-            http://100.110.89.36:8742   (Tailscale)
-Token:      swami_bridge_secret_123
+Agent URL:  http://192.168.1.x:8742   (local Wi-Fi)
+            http://100.x.x.x:8742       (Tailscale)
+Token:      your_bridge_secret_here
 ```
 
 ---
@@ -105,8 +105,8 @@ python -m uvicorn main:app --host 0.0.0.0 --port 8742
 cd app
 flutter build apk --debug
 firebase appdistribution:distribute build\app\outputs\flutter-apk\app-debug.apk `
-  --app 1:304820269242:android:30bef8012fca7576c5d283 `
-  --testers "noless42@gmail.com"
+  --app <your_firebase_app_id> `
+  --testers "your@email.com"
 ```
 
 ---
@@ -114,7 +114,7 @@ firebase appdistribution:distribute build\app\outputs\flutter-apk\app-debug.apk 
 ## Known Setup Notes
 
 - **Tailscale** must be running on BOTH your phone and PC for the `100.x.x.x` address to work
-- If Tailscale isn't active, use the local Wi-Fi IP (`192.168.1.159`) while on the same network
+- If Tailscale isn't active, use the local Wi-Fi IP (e.g. 192.168.1.x) while on the same network
 - The `GITHUB_TOKEN` must have `repo` and `workflow` scopes to read private repos and workflow runs
 - Firebase Cloud Messaging requires the app to be installed with notification permissions granted
 

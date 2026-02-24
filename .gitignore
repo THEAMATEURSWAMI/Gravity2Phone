@@ -21,3 +21,11 @@ ios/Flutter/flutter_export_environment.sh
 android/app/google-services.json
 ios/Runner/GoogleService-Info.plist
 lib/firebase_options.dart
+
+# Logs and system info
+ipconfig_all.txt
+firebase-debug.log
+*.log
+*.txt
+!requirements.txt
+!.agent/workflows/*.md
