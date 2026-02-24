@@ -178,27 +178,54 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                      agentState.deviceName!.toUpperCase(),
                                      style: TextStyle(fontSize: 8, color: theme.colorScheme.primary.withOpacity(0.5), fontWeight: FontWeight.bold, letterSpacing: 1),
                                    ),
-                                   if (agentState.activeBuild != null) ...[
-                                      const SizedBox(width: 8),
-                                      const Text('|', style: TextStyle(fontSize: 8, color: Colors.white10)),
-                                      const SizedBox(width: 8),
-                                      GestureDetector(
-                                        onTap: () {}, // Future: launch URL
-                                        child: Row(
-                                          children: [
-                                            Container(
-                                              width: 6, height: 6,
-                                              decoration: const BoxDecoration(color: Colors.amber, shape: BoxShape.circle),
-                                            ).animate(onPlay: (c) => c.repeat()).fade(duration: 500.ms),
-                                            const SizedBox(width: 4),
-                                            const Text('BUILDING...', style: TextStyle(fontSize: 8, color: Colors.amber, fontWeight: FontWeight.bold)),
-                                          ],
-                                        ),
-                                      ),
-                                   ],
                                  ],
                                ),
                              ),
+                           if (agentState.activeRepo != null)
+                             Padding(
+                               padding: const EdgeInsets.only(top: 8),
+                               child: Container(
+                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                 decoration: BoxDecoration(
+                                   color: theme.colorScheme.primary.withOpacity(0.1),
+                                   borderRadius: BorderRadius.circular(4),
+                                   border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
+                                 ),
+                                 child: Row(
+                                   mainAxisSize: MainAxisSize.min,
+                                   children: [
+                                     Icon(Icons.folder_open, size: 8, color: theme.colorScheme.primary),
+                                     const SizedBox(width: 4),
+                                     Text(
+                                       agentState.activeRepo!.split('/').last.toUpperCase(),
+                                       style: TextStyle(
+                                         fontSize: 8,
+                                         color: theme.colorScheme.primary,
+                                         fontWeight: FontWeight.bold,
+                                         letterSpacing: 1,
+                                       ),
+                                     ),
+                                   ],
+                                 ),
+                               ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
+                             ),
+                           if (agentState.activeBuild != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 8),
+                                child: GestureDetector(
+                                  onTap: () {}, // Future: launch URL
+                                  child: Row(
+                                    children: [
+                                      Container(
+                                        width: 6, height: 6,
+                                        decoration: const BoxDecoration(color: Colors.amber, shape: BoxShape.circle),
+                                      ).animate(onPlay: (c) => c.repeat()).fade(duration: 500.ms),
+                                      const SizedBox(width: 4),
+                                      const Text('BUILDING...', style: TextStyle(fontSize: 8, color: Colors.amber, fontWeight: FontWeight.bold)),
+                                    ],
+                                  ),
+                                ),
+                              ),
                         ],
                       ),
                       const Spacer(),
