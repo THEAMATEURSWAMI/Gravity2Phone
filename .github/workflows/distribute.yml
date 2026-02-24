@@ -39,9 +39,16 @@ jobs:
           cd app
           flutter build apk --debug
           
+      - name: Sanitize Firebase Token
+        id: sanitize
+        run: |
+          CLEAN_TOKEN=$(echo "${{ secrets.FIREBASE_TOKEN }}" | tr -d '\r\n ')
+          echo "::add-mask::$CLEAN_TOKEN"
+          echo "token=$CLEAN_TOKEN" >> $GITHUB_OUTPUT
+
       - name: Upload to Firebase App Distribution
         uses: w9jds/firebase-action@master
         with:
           args: appdistribution:distribute app/build/app/outputs/flutter-apk/app-debug.apk --app 1:304820269242:android:30bef8012fca7576c5d283 --testers "noless42@gmail.com"
         env:
-          FIREBASE_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+          FIREBASE_TOKEN: ${{ steps.sanitize.outputs.token }}
