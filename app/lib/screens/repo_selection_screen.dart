@@ -65,7 +65,7 @@ class _RepoSelectionScreenState extends ConsumerState<RepoSelectionScreen> {
           : _error != null
               ? Center(
                   child: Column(
-                    mainAxisAlignment: MainValue.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(_error!, style: const TextStyle(color: Colors.white54)),
                       const SizedBox(height: 16),

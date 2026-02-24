@@ -7,6 +7,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import '../providers/agent_provider.dart';
 import 'settings_screen.dart';
 import 'workflows_screen.dart';
@@ -180,6 +181,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                  ],
                                ),
                              ),
+                          if (agentState.activeRepo != null)
                              GestureDetector(
                                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RepoSelectionScreen())),
                                child: Padding(
@@ -375,7 +377,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                           child: Center(
                             child: Icon(
                               !canTalk ? Icons.lock_outline :
-                              _speechToText.isListening ? FontAwesomeIcons.microphone : FontAwesomeIcons.bridgeWater,
+                              _speechToText.isListening ? FontAwesomeIcons.microphone : FontAwesomeIcons.solidCircle,
                               size: 40,
                               color: _speechToText.isListening 
                                   ? theme.colorScheme.primary 
@@ -591,7 +593,7 @@ class _MascotAvatar extends StatelessWidget {
                 child: Center(
                   // LED Eyes (Blinking)
                   child: Row(
-                    mainAxisAlignment: MainValue.center,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       _LedEye(isThinking: isThinking),
                       const SizedBox(width: 2),

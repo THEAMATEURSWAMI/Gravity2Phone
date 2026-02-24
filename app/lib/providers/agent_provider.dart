@@ -4,6 +4,36 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
+// --- Models ------------------------------------------------------------------
+
+class LogEntry {
+  final String message;
+  final String source; // 'info', 'terminal', 'gemini', 'system'
+  final String type;   // 'info', 'error', 'success'
+  final String timestamp;
+
+  LogEntry({
+    required this.message, 
+    required this.source, 
+    required this.type, 
+    required this.timestamp,
+  });
+}
+
+class ModelQuota {
+  final String name;
+  final double percent;
+  final int resetSeconds;
+
+  ModelQuota({
+    required this.name, 
+    required this.percent, 
+    required this.resetSeconds,
+  });
+}
+
+// --- State and Providers -----------------------------------------------------
+
 class AgentState {
   final String url;
   final String token;
@@ -52,6 +82,29 @@ class AgentState {
     );
   }
 }
+
+// --- Status & Logs Stubs -----------------------------------------------------
+
+final logsProvider = StateNotifierProvider<LogsNotifier, List<LogEntry>>((ref) => LogsNotifier());
+class LogsNotifier extends StateNotifier<List<LogEntry>> {
+  LogsNotifier() : super([]);
+  void clear() => state = [];
+  void startListening() {}
+  void fetchHistory({bool append = false}) {}
+}
+
+final quotaProvider = StateNotifierProvider<QuotaNotifier, List<ModelQuota>>((ref) => QuotaNotifier());
+class QuotaNotifier extends StateNotifier<List<ModelQuota>> {
+  QuotaNotifier() : super([]);
+  void fetchQuotas() {}
+}
+
+final pushNotificationProvider = Provider((ref) => PushNotificationService());
+class PushNotificationService {
+  void initialize(dynamic context) {}
+}
+
+// --- Main Agent Provider -----------------------------------------------------
 
 final agentProvider = StateNotifierProvider<AgentNotifier, AgentState>((ref) {
   return AgentNotifier();
