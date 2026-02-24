@@ -207,6 +207,10 @@ class IntentRequest(BaseModel):
     context_repo: Optional[str] = Field(None, description="The repository context for this intent.")
     context_chat_id: Optional[str] = Field(None, description="The specific Gemini chat thread ID.")
 
+class IdentityRequest(BaseModel):
+    name: str
+    icon: str # 'computer', 'pi', 'arduino', 'mobile'
+
 class ModelQuota(BaseModel):
     name: str           # e.g. "Claude 3.5 Sonnet"
     model_id: str       # e.g. "claude-3-5-sonnet-20240620"
@@ -407,12 +411,16 @@ async def health(request: Request):
     # Log the connection for visual feedback
     await agent_log(f"🔗 Mobile App Synced", "info", "system")
     
+    # Check if this device is "registered" (has a custom name)
+    is_registered = DEVICE_NAME != "Remote Bridge Machine" and DEVICE_NAME != "Antigravity Laptop"
+    
     return {
         "status": "ok", 
         "agent": "Antigravity Bridge", 
         "device": DEVICE_NAME,
+        "is_registered": is_registered,
         "active_build": active_build,
-        "version": "0.1.0"
+        "version": "0.1.1"
     }
 
 
@@ -618,6 +626,31 @@ async def list_github_repos():
         except Exception as e:
             await agent_log(f"❌ unexpected Error in /repos: {str(e)}", "error")
             raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/identity", tags=["Identity"], dependencies=[Depends(verify_token)])
+async def register_identity(req: IdentityRequest):
+    """Register and persist the device identity metadata."""
+    global DEVICE_NAME
+    DEVICE_NAME = req.name
+    
+    await agent_log(f"👤 Identity Registered: {req.name} (Icon: {req.icon})", "success", "system")
+    
+    # Persist to Firestore if available
+    if db:
+        try:
+            device_ref = db.collection("devices").document("current_agent")
+            device_ref.set({
+                "name": req.name,
+                "icon": req.icon,
+                "updated_at": firestore.SERVER_TIMESTAMP,
+                "last_synced_by": "mobile_app"
+            })
+            await agent_log(f"☁️ Identity synced to cloud Firestore", "info", "system")
+        except Exception as e:
+            await agent_log(f"⚠️ Failed to sync identity to cloud: {e}", "warning")
+
+    return {"status": "success", "registered_name": req.name}
 
 
 @app.get("/workflows", tags=["GitHub"], dependencies=[Depends(verify_token)])

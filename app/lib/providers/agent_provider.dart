@@ -47,9 +47,11 @@ class AgentState {
   final bool isConnected;
   final bool isExecuting;
   final String? activeRepo; 
+  final String activeChatId;
   final String activeModel;
   final String? deviceName;
   final String deviceIcon; // 'computer', 'pi', 'arduino', 'mobile'
+  final bool isRegistered;
   final Map<String, dynamic>? activeBuild;
 
   AgentState({
@@ -62,6 +64,7 @@ class AgentState {
     this.activeModel = 'gemini-1.5-flash',
     this.deviceName,
     this.deviceIcon = 'computer',
+    this.isRegistered = false,
     this.activeBuild,
   });
 
@@ -75,6 +78,7 @@ class AgentState {
     String? activeModel,
     String? deviceName,
     String? deviceIcon,
+    bool? isRegistered,
     Map<String, dynamic>? activeBuild,
     bool clearBuild = false,
   }) {
@@ -88,6 +92,7 @@ class AgentState {
       activeModel: activeModel ?? this.activeModel,
       deviceName: deviceName ?? this.deviceName,
       deviceIcon: deviceIcon ?? this.deviceIcon,
+      isRegistered: isRegistered ?? this.isRegistered,
       activeBuild: clearBuild ? null : (activeBuild ?? this.activeBuild),
     );
   }
@@ -178,7 +183,28 @@ class AgentNotifier extends StateNotifier<AgentState> {
       deviceName: name ?? state.deviceName,
       deviceIcon: icon ?? state.deviceIcon,
     );
+    
+    // Sync to Agent and Cloud
+    if (name != null || icon != null) {
+      await _syncIdentity(name ?? state.deviceName ?? 'Remote Bridge', icon ?? state.deviceIcon);
+    }
+    
     checkConnection();
+  }
+
+  Future<void> _syncIdentity(String name, String icon) async {
+    try {
+      await http.post(
+        Uri.parse('${state.url}/identity'),
+        headers: {'Content-Type': 'application/json', 'X-API-Token': state.token},
+        body: jsonEncode({
+          'name': name,
+          'icon': icon,
+        }),
+      ).timeout(const Duration(seconds: 5));
+    } catch (e) {
+      print('Failed to sync identity: $e');
+    }
   }
 
   Future<void> setActiveRepo(String? repo) async {
@@ -210,6 +236,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
         state = state.copyWith(
           isConnected: true, 
           deviceName: data['device'],
+          isRegistered: data['is_registered'] ?? false,
           activeBuild: data['active_build'],
           clearBuild: data['active_build'] == null,
         );

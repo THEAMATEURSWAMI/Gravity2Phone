@@ -337,7 +337,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     builder: (context) {
                       final hasRepo = agentState.activeRepo != null;
                       final isConnected = agentState.isConnected && agentState.deviceName != null;
-                      final canTalk = hasRepo && isConnected;
+                      final isRegistered = agentState.isRegistered;
+                      final canTalk = hasRepo && isConnected && isRegistered;
 
                       return GestureDetector(
                         onLongPressStart: canTalk ? (_) => _startListening() : null,
@@ -395,6 +396,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                       
                       String label = 'Hold to Speak';
                       if (!isConnected) label = 'Waiting for Laptop...';
+                      else if (!isRegistered) label = 'Registration Required';
                       else if (!hasRepo) label = 'Tap to Select a Repo';
                       if (_speechToText.isListening) label = 'Listening...';
 
