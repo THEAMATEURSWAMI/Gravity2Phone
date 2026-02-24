@@ -24,7 +24,7 @@ android {
 
     defaultConfig {
         applicationId = "com.theamateurswami.bridge_app"
-        minSdk = flutter.minSdkVersion
+        minSdk = 21
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"

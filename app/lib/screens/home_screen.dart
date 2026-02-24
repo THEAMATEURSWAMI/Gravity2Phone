@@ -56,18 +56,62 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       setState(() => _lastWords = result.recognizedWords);
       if (result.finalResult && _lastWords.isNotEmpty) {
         final phrase = _lastWords.toLowerCase();
-        if (phrase.contains('update') && (phrase.contains('site') || phrase.contains('website'))) {
-          ref.read(agentProvider.notifier).executeIntent('update-site');
-        } else if (phrase.startsWith('gemini') || phrase.startsWith('ask')) {
-          // Talk to AI
-          final msg = _lastWords.replaceFirst(RegExp(r'^(gemini|ask)\s+', caseSensitive: false), '');
-          ref.read(agentProvider.notifier).askGemini(msg);
+        
+        // Admin Risk Check
+        final risks = ['netsh', 'sc ', 'net stop', 'net start', 'registry', 'system32', 'rmdir /s', 'del /f', 'powershell'];
+        final hasRisk = risks.any((risk) => phrase.contains(risk));
+
+        if (hasRisk) {
+           _showAdminWarning(() {
+              _processPhrase(phrase, _lastWords);
+           });
         } else {
-          ref.read(agentProvider.notifier).executeCommand(_lastWords);
+           _processPhrase(phrase, _lastWords);
         }
       }
     });
     setState(() {});
+  }
+
+  void _processPhrase(String phrase, String original) {
+    if (phrase.contains('update') && (phrase.contains('site') || phrase.contains('website'))) {
+      ref.read(agentProvider.notifier).executeIntent('update-site');
+    } else if (phrase.startsWith('gemini') || phrase.startsWith('ask')) {
+      final msg = original.replaceFirst(RegExp(r'^(gemini|ask)\s+', caseSensitive: false), '');
+      ref.read(agentProvider.notifier).askGemini(msg);
+    } else {
+      ref.read(agentProvider.notifier).executeCommand(original);
+    }
+  }
+
+  void _showAdminWarning(VoidCallback onConfirm) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: const Color(0xFF1E1E26),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
+            SizedBox(width: 8),
+            Text('Admin Warning', style: TextStyle(color: Colors.white, fontSize: 16)),
+          ],
+        ),
+        content: const Text(
+          'This command looks like it might require Administrator privileges. \n\nRemote agents cannot click "Allow" on your laptop. Are you sure?',
+          style: TextStyle(color: Colors.white60, fontSize: 12),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL', style: TextStyle(color: Colors.white24, fontSize: 10))),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              onConfirm();
+            }, 
+            child: const Text('PROCEED', style: TextStyle(color: Colors.amber, fontSize: 10, fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
+    );
   }
 
   void _stopListening() async {
