@@ -1,4 +1,4 @@
-package com.theamateurswami.bridge_app
+package com.theamateurswami.gravity2phone.bridge
 
 import io.flutter.embedding.android.FlutterActivity
 
