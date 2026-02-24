@@ -1,0 +1,48 @@
+{
+  "project_info": {
+    "project_number": "304820269242",
+    "project_id": "gravity2phone-amateurswami",
+    "storage_bucket": "gravity2phone-amateurswami.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:304820269242:android:30bef8012fca7576c5d283",
+        "android_client_info": {
+          "package_name": "com.theamateurswami.bridge_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIrA1KDUsolwxIapyom1WkUVRtVVUug3I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:304820269242:android:cf6228313dca45d6c5d283",
+        "android_client_info": {
+          "package_name": "com.theamateurswami.gravity2phone.bridge"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIrA1KDUsolwxIapyom1WkUVRtVVUug3I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

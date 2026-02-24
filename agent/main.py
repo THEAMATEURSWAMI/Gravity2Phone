@@ -19,6 +19,8 @@ from fastapi import FastAPI, Depends, HTTPException, Header, status, BackgroundT
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
+import firebase_admin
+from firebase_admin import credentials, messaging
 
 load_dotenv()
 
@@ -28,9 +30,20 @@ load_dotenv()
 API_SECRET_TOKEN = os.getenv("API_SECRET_TOKEN", "")
 AGENT_SHELL = os.getenv("AGENT_SHELL", "bash")
 COMMAND_TIMEOUT_SEC = 60  # Hard kill any command that exceeds this
+FIREBASE_KEY_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
 
 if not API_SECRET_TOKEN:
     raise RuntimeError("API_SECRET_TOKEN is not set. Copy .env.example to .env and fill it in.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Firebase Initialization
+# ─────────────────────────────────────────────────────────────────────────────
+if FIREBASE_KEY_PATH and os.path.exists(FIREBASE_KEY_PATH):
+    cred = credentials.Certificate(FIREBASE_KEY_PATH)
+    firebase_admin.initialize_app(cred)
+    print(f"🚀 Firebase initialized with key: {FIREBASE_KEY_PATH}")
+else:
+    print("⚠  Firebase not initialized. Specify FIREBASE_SERVICE_ACCOUNT_PATH in .env to enable Dings.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # In-memory job store (Phase 1 — upgradeable to Redis in Phase 4)
@@ -88,6 +101,35 @@ class JobStatus(BaseModel):
     status: str   # "running" | "done" | "failed"
     result: Optional[CommandResult] = None
 
+class NotificationRequest(BaseModel):
+    title: str
+    body: str
+    token: Optional[str] = Field(None, description="Target device FCM token. If None, sends to 'all' topic.")
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Notification Helper
+# ─────────────────────────────────────────────────────────────────────────────
+async def send_ding(title: str, body: str, token: Optional[str] = None):
+    """Send a push notification via Firebase."""
+    if not firebase_admin._apps:
+        print(f"Ding suppressed (Firebase not ready): {title} - {body}")
+        return
+
+    message = messaging.Message(
+        notification=messaging.Notification(
+            title=title,
+            body=body,
+        ),
+        token=token,
+        topic="all" if not token else None,
+    )
+    
+    try:
+        response = messaging.send(message)
+        print(f"Ding sent successfully: {response}")
+    except Exception as e:
+        print(f"Failed to send Ding: {e}")
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Execution Engine
 # ─────────────────────────────────────────────────────────────────────────────
@@ -108,7 +150,7 @@ async def _run_command(job_id: str, command: str, cwd: Optional[str]):
             stdout_b, stderr_b = await asyncio.wait_for(proc.communicate(), timeout=COMMAND_TIMEOUT_SEC)
         except asyncio.TimeoutError:
             proc.kill()
-            stdout_b, stderr_b = b"", b"[AGENT] Command killed — exceeded timeout."
+            stdout_b, stderr_b = b"", b"[AGENT] Command killed - exceeded timeout."
             proc.returncode = -1
 
         finished_at = datetime.now(timezone.utc)
@@ -185,6 +227,13 @@ async def list_jobs():
         {"job_id": jid, "status": jdata["status"]}
         for jid, jdata in jobs.items()
     ]
+
+
+@app.post("/notify", tags=["Notifications"], dependencies=[Depends(verify_token)])
+async def notify_endpoint(req: NotificationRequest):
+    """Send a manual push notification to the mobile app."""
+    await send_ding(req.title, req.body, req.token)
+    return {"status": "sent"}
 
 
 @app.delete("/jobs/{job_id}", tags=["Execution"], dependencies=[Depends(verify_token)])
