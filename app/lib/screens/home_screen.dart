@@ -393,6 +393,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     builder: (context) {
                       final hasRepo = agentState.activeRepo != null;
                       final isConnected = agentState.isConnected && agentState.deviceName != null;
+                      final isRegistered = agentState.isRegistered;
                       
                       String label = 'Hold to Speak';
                       if (!isConnected) label = 'Waiting for Laptop...';
