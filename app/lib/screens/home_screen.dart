@@ -5,6 +5,7 @@ import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../providers/agent_provider.dart';
 import 'settings_screen.dart';
+import 'workflows_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -99,6 +100,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                         children: [
                           _StatusIndicator(isConnected: agentState.isConnected),
                           const SizedBox(width: 8),
+                          IconButton(
+                            icon: const Icon(Icons.rocket_launch, color: Colors.white24),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(builder: (_) => const WorkflowsScreen()),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
                           IconButton(
                             icon: const Icon(Icons.settings, color: Colors.white24),
                             onPressed: () => Navigator.push(

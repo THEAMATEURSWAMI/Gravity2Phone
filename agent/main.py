@@ -13,7 +13,8 @@ import subprocess
 import asyncio
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, List
+import httpx
 
 from fastapi import FastAPI, Depends, HTTPException, Header, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -31,6 +32,7 @@ API_SECRET_TOKEN = os.getenv("API_SECRET_TOKEN", "")
 AGENT_SHELL = os.getenv("AGENT_SHELL", "bash")
 COMMAND_TIMEOUT_SEC = 60  # Hard kill any command that exceeds this
 FIREBASE_KEY_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
 
 if not API_SECRET_TOKEN:
     raise RuntimeError("API_SECRET_TOKEN is not set. Copy .env.example to .env and fill it in.")
@@ -105,6 +107,15 @@ class NotificationRequest(BaseModel):
     title: str
     body: str
     token: Optional[str] = Field(None, description="Target device FCM token. If None, sends to 'all' topic.")
+
+class WorkflowRun(BaseModel):
+    id: int
+    name: str
+    status: str
+    conclusion: Optional[str]
+    repo: str
+    url: str
+    created_at: str
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Notification Helper
@@ -234,6 +245,40 @@ async def notify_endpoint(req: NotificationRequest):
     """Send a manual push notification to the mobile app."""
     await send_ding(req.title, req.body, req.token)
     return {"status": "sent"}
+
+
+@app.get("/workflows", tags=["GitHub"], dependencies=[Depends(verify_token)])
+async def get_github_workflows(owner: str, repo: str):
+    """Fetch recent workflow runs from GitHub for a specific repository."""
+    if not GITHUB_TOKEN:
+        raise HTTPException(status_code=400, detail="GITHUB_TOKEN not configured on agent.")
+    
+    url = f"https://api.github.com/repos/{owner}/{repo}/actions/runs?per_page=10"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(url, headers=headers)
+            resp.raise_for_status()
+            data = resp.json()
+            
+            runs = []
+            for run in data.get("workflow_runs", []):
+                runs.append(WorkflowRun(
+                    id=run["id"],
+                    name=run["name"],
+                    status=run["status"],
+                    conclusion=run["conclusion"],
+                    repo=f"{owner}/{repo}",
+                    url=run["html_url"],
+                    created_at=run["created_at"]
+                ))
+            return runs
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/jobs/{job_id}", tags=["Execution"], dependencies=[Depends(verify_token)])
