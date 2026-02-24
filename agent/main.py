@@ -17,14 +17,15 @@ from typing import Optional, List
 import httpx
 
 import json
-from fastapi import FastAPI, Depends, HTTPException, Header, status, BackgroundTasks, Request
+from fastapi import FastAPI, Depends, HTTPException, Header, status, BackgroundTasks, Request, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 from pydantic import BaseModel, Field
 from dotenv import load_dotenv
 import firebase_admin
-from firebase_admin import credentials, messaging
+from firebase_admin import credentials, messaging, firestore
+import google.generativeai as genai
 
 load_dotenv()
 
@@ -36,6 +37,11 @@ AGENT_SHELL = os.getenv("AGENT_SHELL", "bash")
 COMMAND_TIMEOUT_SEC = 60  # Hard kill any command that exceeds this
 FIREBASE_KEY_PATH = os.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
 GITHUB_TOKEN = os.getenv("GITHUB_TOKEN", "")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+DEVICE_NAME = os.getenv("DEVICE_NAME", "Remote Bridge Machine")
+
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
 
 if not API_SECRET_TOKEN:
     raise RuntimeError("API_SECRET_TOKEN is not set. Copy .env.example to .env and fill it in.")
@@ -46,9 +52,11 @@ if not API_SECRET_TOKEN:
 if FIREBASE_KEY_PATH and os.path.exists(FIREBASE_KEY_PATH):
     cred = credentials.Certificate(FIREBASE_KEY_PATH)
     firebase_admin.initialize_app(cred)
-    print(f"🚀 Firebase initialized with key: {FIREBASE_KEY_PATH}")
+    db = firestore.client()
+    print(f"🚀 Firebase + Firestore initialized with key: {FIREBASE_KEY_PATH}")
 else:
-    print("⚠  Firebase not initialized. Specify FIREBASE_SERVICE_ACCOUNT_PATH in .env to enable Dings.")
+    db = None
+    print("⚠  Firebase not initialized. Specify FIREBASE_SERVICE_ACCOUNT_PATH in .env to enable Dings and Cloud Logs.")
 
 # ─────────────────────────────────────────────────────────────────────────────
 # In-memory job store (Phase 1 — upgradeable to Redis in Phase 4)
@@ -59,17 +67,27 @@ approvals: dict[str, dict] = {} # approval_id: {"event": asyncio.Event(), "resul
 log_listeners: List[asyncio.Queue] = []
 log_history: List[dict] = []
 
-async def agent_log(message: str, type: str = "info"):
+async def agent_log(message: str, type: str = "info", source: str = "system"):
     """Helper to print logs and broadcast them to all connected SSE listeners."""
     timestamp = datetime.now().strftime("%H:%M:%S")
-    print(f"[{timestamp}] {message}")
+    print(f"[{timestamp}] [{source.upper()}] {message}")
     
-    log_data = {"type": type, "message": message, "timestamp": timestamp}
+    log_data = {"type": type, "message": message, "timestamp": timestamp, "source": source}
     
-    # Store in history
-    log_history.append(log_data)
-    if len(log_history) > 20:
+    if len(log_history) > 100:
         log_history.pop(0)
+
+    # Backup to Cloud (Firestore)
+    if db:
+        try:
+            # We use an async wrapper or execute in thread since Firestore SDK is sync usually 
+            # but for simplicity in this agent we'll do it sync for now as it's fast
+            db.collection("logs").add({
+                **log_data,
+                "server_timestamp": firestore.SERVER_TIMESTAMP
+            })
+        except Exception as e:
+            print(f"Error saving to cloud: {e}")
     
     # Broadcast to all active listeners
     for queue in log_listeners[:]: # Using a copy to avoid mutation errors
@@ -95,6 +113,20 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+async def check_active_build(owner: str, repo: str) -> Optional[dict]:
+    """Helper to check if there is an active GitHub Action run."""
+    if not GITHUB_TOKEN: return None
+    gh_headers = {"Authorization": f"Bearer {GITHUB_TOKEN}", "Accept": "application/vnd.github.v3+json", "User-Agent": "AntigravityBridgeAgent"}
+    async with httpx.AsyncClient() as client:
+        try:
+            resp = await client.get(f"https://api.github.com/repos/{owner}/{repo}/actions/runs?per_page=1", headers=gh_headers)
+            if resp.status_code == 200:
+                runs = resp.json().get("workflow_runs", [])
+                if runs and runs[0]["status"] in ["in_progress", "queued", "requested"]:
+                    return {"id": runs[0]["id"], "status": runs[0]["status"], "url": runs[0]["html_url"]}
+        except: pass
+    return None
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Auth
 # ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +150,8 @@ class CommandRequest(BaseModel):
     command: str = Field(..., description="The shell command to execute.", examples=["git status"])
     working_dir: Optional[str] = Field(None, description="Optional working directory (defaults to home).")
     async_run: bool = Field(False, description="If True, runs in background and returns a job ID immediately.")
+    context_repo: Optional[str] = Field(None, description="The repository context for this command.")
+    context_chat_id: Optional[str] = Field(None, description="The specific Gemini chat thread ID.")
 
 class CommandResult(BaseModel):
     job_id: str
@@ -138,6 +172,12 @@ class NotificationRequest(BaseModel):
     title: str
     body: str
     token: Optional[str] = Field(None, description="Target device FCM token. If None, sends to 'all' topic.")
+
+class ChatRequest(BaseModel):
+    message: str
+    context_repo: Optional[str] = None
+    context_chat_id: Optional[str] = "default"
+    model_id: Optional[str] = "gemini-1.5-flash"
 
 class WorkflowRun(BaseModel):
     id: int
@@ -163,6 +203,8 @@ class GitHubRepo(BaseModel):
 class IntentRequest(BaseModel):
     intent: str
     params: Optional[dict] = {}
+    context_repo: Optional[str] = Field(None, description="The repository context for this intent.")
+    context_chat_id: Optional[str] = Field(None, description="The specific Gemini chat thread ID.")
 
 class ModelQuota(BaseModel):
     name: str           # e.g. "Claude 3.5 Sonnet"
@@ -260,6 +302,11 @@ async def _run_command(job_id: str, command: str, cwd: Optional[str]):
         finished_at = datetime.now(timezone.utc)
         duration_ms = int((finished_at - started_at).total_seconds() * 1000)
 
+        if stdout_b:
+            await agent_log(f"Terminal Output:\n{stdout_b.decode('utf-8', errors='replace')[:500]}...", "info", "terminal")
+        if stderr_b:
+            await agent_log(f"Terminal Error:\n{stderr_b.decode('utf-8', errors='replace')[:500]}...", "error", "terminal")
+
         result = CommandResult(
             job_id=job_id,
             command=command,
@@ -330,9 +377,24 @@ async def handle_intent(intent: str, params: dict, background_tasks: BackgroundT
 # Routes
 # ─────────────────────────────────────────────────────────────────────────────
 @app.get("/health", tags=["System"])
-async def health():
-    """Quick liveness check. No auth required for uptime monitors."""
-    return {"status": "ok", "agent": "Antigravity Remote Agent", "version": "0.1.0"}
+async def health(request: Request):
+    """Quick liveness check. Returns device identity and optional build status."""
+    active_build = None
+    if context_repo := request.query_params.get("context_repo"):
+        if "/" in context_repo:
+            owner, repo = context_repo.split("/")
+            active_build = await check_active_build(owner, repo)
+
+    # Log the connection for visual feedback
+    await agent_log(f"🔗 Mobile App Synced", "info", "system")
+    
+    return {
+        "status": "ok", 
+        "agent": "Antigravity Bridge", 
+        "device": DEVICE_NAME,
+        "active_build": active_build,
+        "version": "0.1.0"
+    }
 
 
 @app.post("/command", response_model=JobStatus, tags=["Execution"], dependencies=[Depends(verify_token)])
@@ -346,11 +408,14 @@ async def run_command_endpoint(req: CommandRequest, background_tasks: Background
     job_id = str(uuid.uuid4())
     jobs[job_id] = {"status": "queued", "result": None}
 
+    context_str = f" [{req.context_repo}]" if req.context_repo else ""
+    
     if req.async_run:
-        await agent_log(f"⏳ Queued async command: {req.command[:30]}...")
+        await agent_log(f"⏳ Queued async command{context_str}: {req.command[:30]}...")
         background_tasks.add_task(_run_command, job_id, req.command, req.working_dir)
         return JobStatus(job_id=job_id, status="queued")
     else:
+        await agent_log(f"⚡ Running sync command{context_str}: {req.command[:30]}...")
         await _run_command(job_id, req.command, req.working_dir)
         return JobStatus(job_id=job_id, status=jobs[job_id]["status"], result=jobs[job_id]["result"])
 
@@ -358,10 +423,66 @@ async def run_command_endpoint(req: CommandRequest, background_tasks: Background
 @app.post("/intent", tags=["Execution"], dependencies=[Depends(verify_token)])
 async def intent_endpoint(req: IntentRequest, background_tasks: BackgroundTasks):
     """Higher-level endpoint for spoken intents like 'update the site'."""
+    context_str = f" ({req.context_repo})" if req.context_repo else ""
+    await agent_log(f"🧠 Intent received: {req.intent}{context_str}")
     result = await handle_intent(req.intent, req.params or {}, background_tasks)
     if result["status"] == "unknown_intent":
         raise HTTPException(status_code=400, detail="Unknown intent.")
     return result
+
+@app.post("/chat", tags=["AI"], dependencies=[Depends(verify_token)])
+async def gemini_chat(req: ChatRequest):
+    """Voice-to-Gemini chat scoped to a specific repository context and model."""
+    if not GEMINI_API_KEY:
+        raise HTTPException(status_code=400, detail="GEMINI_API_KEY not configured on agent.")
+    
+    context_str = f" [Repo: {req.context_repo}]" if req.context_repo else ""
+    await agent_log(f"🧠 Gemini Inquiry ({req.model_id}){context_str}: {req.message}")
+    
+    try:
+        model = genai.GenerativeModel(req.model_id or 'gemini-1.5-flash')
+        # AI prompt log
+        await agent_log(f"Prompt: {req.message}", "info", "user")
+        
+        response = model.generate_content(prompt)
+        ai_response = response.text.strip()
+        
+        # Confirmation message with device identity
+        await agent_log(ai_response, "success", "gemini")
+        return {"response": ai_response, "device": DEVICE_NAME}
+    except Exception as e:
+        await agent_log(f"❌ Gemini Error: {str(e)}", "error")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/upload", tags=["Assets"], dependencies=[Depends(verify_token)])
+async def upload_asset(
+    request: Request,
+    file: UploadFile = File(...),
+    x_context_repo: Optional[str] = Header(None)
+):
+    """Receive an asset (image/file) and save it to the target repository directory."""
+    try:
+        # Resolve target directory
+        base_dir = r"c:\Cursor Projects"
+        target_repo = x_context_repo or "General Funsies"
+        
+        # Clean the repo name (split owner/repo if present)
+        clean_repo = target_repo.split("/")[-1]
+        
+        dest_dir = os.path.join(base_dir, clean_repo, "assets")
+        os.makedirs(dest_dir, exist_ok=True)
+        
+        file_path = os.path.join(dest_dir, file.filename)
+        
+        with open(file_path, "wb") as f:
+            f.write(await file.read())
+            
+        await agent_log(f"📁 Asset Received: {file.filename} -> {dest_dir}", "success")
+        return {"status": "success", "path": file_path}
+    except Exception as e:
+        await agent_log(f"❌ Upload Error: {str(e)}", "error")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/jobs/{job_id}", response_model=JobStatus, tags=["Execution"], dependencies=[Depends(verify_token)])
@@ -639,6 +760,30 @@ async def stream_logs(request: Request):
                 log_listeners.remove(queue)
 
     return EventSourceResponse(event_generator())
+
+@app.get("/history", tags=["Discovery"], dependencies=[Depends(verify_token)])
+async def get_cloud_history(limit: int = 50, offset: int = 0):
+    """Fetch global log history from Firestore with pagination."""
+    if not db:
+        raise HTTPException(status_code=400, detail="Cloud storage not initialized.")
+    
+    try:
+        query = db.collection("logs").order_by("server_timestamp", direction=firestore.Query.DESCENDING)
+        
+        # Note: True pagination in Firestore uses start_at/start_after for performance, 
+        # but for this scale offset is fine.
+        docs = query.offset(offset).limit(limit).stream()
+        history = []
+        for doc in docs:
+            data = doc.to_dict()
+            if "server_timestamp" in data and data["server_timestamp"]:
+                data["server_timestamp"] = data["server_timestamp"].isoformat()
+            history.append(data)
+            
+        return history[::-1]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     import uvicorn

@@ -5,6 +5,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:image_picker/image_picker.dart';
 import '../providers/agent_provider.dart';
 import '../providers/push_provider.dart';
 import '../providers/logs_provider.dart';
@@ -40,6 +41,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     setState(() {});
   }
 
+  Future<void> _pickAndUploadAsset() async {
+    final picker = ImagePicker();
+    final XFile? image = await picker.pickImage(source: ImageSource.gallery);
+    
+    if (image != null) {
+      ref.read(agentProvider.notifier).uploadAsset(image.path);
+    }
+  }
+
   void _startListening() async {
     await _speechToText.listen(onResult: (result) {
       if (!mounted) return;
@@ -48,6 +58,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         final phrase = _lastWords.toLowerCase();
         if (phrase.contains('update') && (phrase.contains('site') || phrase.contains('website'))) {
           ref.read(agentProvider.notifier).executeIntent('update-site');
+        } else if (phrase.startsWith('gemini') || phrase.startsWith('ask')) {
+          // Talk to AI
+          final msg = _lastWords.replaceFirst(RegExp(r'^(gemini|ask)\s+', caseSensitive: false), '');
+          ref.read(agentProvider.notifier).askGemini(msg);
         } else {
           ref.read(agentProvider.notifier).executeCommand(_lastWords);
         }
@@ -91,27 +105,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
                   child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'ANTIGRAVITY',
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          letterSpacing: 4,
-                          fontWeight: FontWeight.bold,
-                          color: theme.colorScheme.primary,
-                        ),
-                      ),
-                      Row(
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          IconButton(
-                            icon: const Icon(Icons.rocket_launch, color: Colors.white24, size: 20),
-                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkflowsScreen())),
+                          Text(
+                            'ANTIGRAVITY',
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              letterSpacing: 4,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.settings, color: Colors.white24, size: 20),
-                            onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
-                          ),
+                          if (agentState.deviceName != null)
+                             Padding(
+                               padding: const EdgeInsets.only(top: 4),
+                               child: Row(
+                                 children: [
+                                   Icon(Icons.laptop_chromebook, size: 10, color: theme.colorScheme.primary.withOpacity(0.5)),
+                                   const SizedBox(width: 4),
+                                   Text(
+                                     agentState.deviceName!.toUpperCase(),
+                                     style: TextStyle(fontSize: 8, color: theme.colorScheme.primary.withOpacity(0.5), fontWeight: FontWeight.bold, letterSpacing: 1),
+                                   ),
+                                   if (agentState.activeBuild != null) ...[
+                                      const SizedBox(width: 8),
+                                      const Text('|', style: TextStyle(fontSize: 8, color: Colors.white10)),
+                                      const SizedBox(width: 8),
+                                      GestureDetector(
+                                        onTap: () {}, // Future: launch URL
+                                        child: Row(
+                                          children: [
+                                            Container(
+                                              width: 6, height: 6,
+                                              decoration: const BoxDecoration(color: Colors.amber, shape: BoxShape.circle),
+                                            ).animate(onPlay: (c) => c.repeat()).fade(duration: 500.ms),
+                                            const SizedBox(width: 4),
+                                            const Text('BUILDING...', style: TextStyle(fontSize: 8, color: Colors.amber, fontWeight: FontWeight.bold)),
+                                          ],
+                                        ),
+                                      ),
+                                   ],
+                                 ],
+                               ),
+                             ),
                         ],
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.attach_file, color: Colors.white24, size: 20),
+                        onPressed: _pickAndUploadAsset,
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.rocket_launch, color: Colors.white24, size: 20),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkflowsScreen())),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.settings, color: Colors.white24, size: 20),
+                        onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
                       ),
                     ],
                   ),
@@ -119,52 +170,157 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
                 const Spacer(),
 
+                // ... (Context Badge stays here)
+
+                // Active Context Console
+                if (agentState.activeRepo != null || agentState.deviceName != null)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 24),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: theme.colorScheme.primary.withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: theme.colorScheme.primary.withOpacity(0.15)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.laptop, size: 14, color: theme.colorScheme.primary.withOpacity(0.5)),
+                            const SizedBox(width: 8),
+                            Text(
+                              agentState.deviceName ?? 'REMOTE',
+                              style: TextStyle(
+                                color: theme.colorScheme.primary.withOpacity(0.7),
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            const Text('|', style: TextStyle(color: Colors.white10)),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                               onTap: () {
+                                 final nextModel = agentState.activeModel.contains('flash') ? 'gemini-1.5-pro' : 'gemini-1.5-flash';
+                                 ref.read(agentProvider.notifier).setActiveModel(nextModel);
+                               },
+                               child: Row(
+                                 children: [
+                                   Icon(Icons.bolt, size: 14, color: agentState.activeModel.contains('flash') ? Colors.amber : Colors.purpleAccent),
+                                   const SizedBox(width: 4),
+                                   Text(
+                                     agentState.activeModel.contains('flash') ? 'FLASH' : 'PRO',
+                                     style: TextStyle(
+                                       color: agentState.activeModel.contains('flash') ? Colors.amber : Colors.purpleAccent,
+                                       fontSize: 10,
+                                       fontWeight: FontWeight.bold,
+                                     ),
+                                   ),
+                                 ],
+                               ),
+                            ),
+                            if (agentState.activeRepo != null) ...[
+                               const SizedBox(width: 8),
+                               const Text('|', style: TextStyle(color: Colors.white10)),
+                               const SizedBox(width: 8),
+                               Text(
+                                 agentState.activeRepo!.split('/').last.toUpperCase(),
+                                 style: TextStyle(
+                                   color: theme.colorScheme.primary,
+                                   fontSize: 10,
+                                   fontWeight: FontWeight.bold,
+                                 ),
+                               ),
+                               const SizedBox(width: 8),
+                               GestureDetector(
+                                  onTap: () => ref.read(agentProvider.notifier).setActiveRepo(null),
+                                  child: Icon(Icons.close, size: 14, color: theme.colorScheme.primary.withOpacity(0.4)),
+                               ),
+                            ],
+                          ],
+                        ),
+                      ).animate().fadeIn().scale(),
+                    ),
+                  ),
+
                 // Main Bridge Action
                 Center(
-                  child: GestureDetector(
-                    onLongPressStart: (_) => _startListening(),
-                    onLongPressEnd: (_) => _stopListening(),
-                    child: Container(
-                      width: 180,
-                      height: 180,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: theme.colorScheme.surface,
-                        border: Border.all(
-                          color: _speechToText.isListening ? theme.colorScheme.primary : Colors.white10,
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          if (_speechToText.isListening)
-                            BoxShadow(
-                              color: theme.colorScheme.primary.withOpacity(0.3),
-                              blurRadius: 30,
-                              spreadRadius: 5,
+                  child: Builder(
+                    builder: (context) {
+                      final hasRepo = agentState.activeRepo != null;
+                      final isConnected = agentState.isConnected && agentState.deviceName != null;
+                      final canTalk = hasRepo && isConnected;
+
+                      return GestureDetector(
+                        onLongPressStart: canTalk ? (_) => _startListening() : null,
+                        onLongPressEnd: canTalk ? (_) => _stopListening() : null,
+                        onTap: !canTalk ? () => Navigator.push(context, MaterialPageRoute(builder: (_) => const WorkflowsScreen())) : null,
+                        child: Container(
+                          width: 180,
+                          height: 180,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: theme.colorScheme.surface,
+                            border: Border.all(
+                              color: _speechToText.isListening 
+                                  ? theme.colorScheme.primary 
+                                  : !canTalk ? Colors.white.withOpacity(0.05) : Colors.white10,
+                              width: 2,
                             ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Icon(
-                          _speechToText.isListening ? FontAwesomeIcons.microphone : FontAwesomeIcons.bridgeWater,
-                          size: 40,
-                          color: _speechToText.isListening ? theme.colorScheme.primary : Colors.white24,
+                            boxShadow: [
+                              if (_speechToText.isListening)
+                                BoxShadow(
+                                  color: theme.colorScheme.primary.withOpacity(0.3),
+                                  blurRadius: 30,
+                                  spreadRadius: 5,
+                                ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Icon(
+                              !canTalk ? Icons.lock_outline :
+                              _speechToText.isListening ? FontAwesomeIcons.microphone : FontAwesomeIcons.bridgeWater,
+                              size: 40,
+                              color: _speechToText.isListening 
+                                  ? theme.colorScheme.primary 
+                                  : !canTalk ? Colors.white10 : Colors.white24,
+                            ),
+                          ),
+                        )
+                        .animate(onPlay: (c) => c.repeat(reverse: true))
+                        .scale(
+                          begin: const Offset(1, 1), 
+                          end: _speechToText.isListening ? const Offset(1.1, 1.1) : const Offset(1, 1)
                         ),
-                      ),
-                    )
-                    .animate(onPlay: (c) => c.repeat(reverse: true))
-                    .scale(begin: const Offset(1, 1), end: _speechToText.isListening ? const Offset(1.1, 1.1) : const Offset(1, 1)),
+                      );
+                    },
                   ),
                 ),
 
                 const SizedBox(height: 24),
 
                 Center(
-                  child: Text(
-                    _speechToText.isListening ? 'Listening...' : 'Hold to Speak',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      color: _speechToText.isListening ? theme.colorScheme.primary : Colors.white24,
-                      letterSpacing: 1,
-                    ),
+                  child: Builder(
+                    builder: (context) {
+                      final hasRepo = agentState.activeRepo != null;
+                      final isConnected = agentState.isConnected && agentState.deviceName != null;
+                      
+                      String label = 'Hold to Speak';
+                      if (!isConnected) label = 'Waiting for Laptop...';
+                      else if (!hasRepo) label = 'Tap to Select a Repo';
+                      if (_speechToText.isListening) label = 'Listening...';
+
+                      return Text(
+                        label,
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          color: _speechToText.isListening 
+                              ? theme.colorScheme.primary 
+                              : (!hasRepo || !isConnected) ? theme.colorScheme.primary.withOpacity(0.5) : Colors.white24,
+                          letterSpacing: 1,
+                        ),
+                      );
+                    },
                   ),
                 ),
 
@@ -229,30 +385,20 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                             )
                           : ListView.builder(
                               reverse: true,
-                              itemCount: ref.watch(logsProvider).length,
+                              itemCount: ref.watch(logsProvider).length + 1,
                               itemBuilder: (context, index) {
+                                if (index == ref.watch(logsProvider).length) {
+                                  return Center(
+                                    child: TextButton(
+                                      onPressed: () => ref.read(logsProvider.notifier).fetchHistory(append: true),
+                                      child: const Text('LOAD EARLIER', style: TextStyle(fontSize: 9, letterSpacing: 1, color: Colors.white10)),
+                                    ),
+                                  );
+                                }
+                                
                                 final logs = ref.watch(logsProvider).reversed.toList();
                                 final log = logs[index];
-                                return Padding(
-                                  padding: const EdgeInsets.only(bottom: 6),
-                                  child: Row(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text('${log.timestamp} ', style: GoogleFonts.firaCode(fontSize: 10, color: Colors.white12)),
-                                      Expanded(
-                                        child: Text(
-                                          log.message,
-                                          style: GoogleFonts.firaCode(
-                                            fontSize: 12,
-                                            color: log.type == 'error' ? Colors.redAccent.withOpacity(0.7) : 
-                                                   log.type == 'success' ? Colors.greenAccent.withOpacity(0.7) :
-                                                   Colors.white60,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                );
+                                return _LogItem(log: log);
                               },
                             ),
                       ),
@@ -388,6 +534,107 @@ class _QuotaMeterState extends State<_QuotaMeter> {
               backgroundColor: color.withOpacity(0.05),
               color: color.withOpacity(0.8),
               minHeight: 2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LogItem extends StatelessWidget {
+  final LogEntry log;
+  const _LogItem({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    // Terminal styling
+    if (log.source == 'terminal') {
+       return Container(
+         margin: const EdgeInsets.only(bottom: 8),
+         padding: const EdgeInsets.all(12),
+         decoration: BoxDecoration(
+           color: Colors.black.withOpacity(0.3),
+           borderRadius: BorderRadius.circular(8),
+           border: Border.all(color: Colors.white.withOpacity(0.05)),
+         ),
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+             Row(
+               children: [
+                 const Icon(Icons.terminal, size: 10, color: Colors.white24),
+                 const SizedBox(width: 6),
+                 Text(log.timestamp, style: GoogleFonts.firaCode(fontSize: 8, color: Colors.white12)),
+               ],
+             ),
+             const SizedBox(height: 8),
+             Text(
+               log.message,
+               style: GoogleFonts.firaCode(fontSize: 11, color: log.type == 'error' ? Colors.redAccent.withOpacity(0.6) : Colors.white70),
+             ),
+           ],
+         ),
+       );
+    }
+
+    // Gemini styling
+    if (log.source == 'gemini') {
+       return Container(
+         margin: const EdgeInsets.only(bottom: 12),
+         padding: const EdgeInsets.all(16),
+         decoration: BoxDecoration(
+           color: theme.colorScheme.primary.withOpacity(0.03),
+           borderRadius: BorderRadius.circular(16),
+           border: Border.all(color: theme.colorScheme.primary.withOpacity(0.05)),
+         ),
+         child: Column(
+           crossAxisAlignment: CrossAxisAlignment.start,
+           children: [
+             Row(
+               children: [
+                 Container(
+                   padding: const EdgeInsets.all(4),
+                   decoration: BoxDecoration(color: Colors.amber.withOpacity(0.1), shape: BoxShape.circle),
+                   child: const Icon(Icons.auto_awesome, size: 10, color: Colors.amberAccent),
+                 ),
+                 const SizedBox(width: 8),
+                 Text('GEMINI', style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: theme.colorScheme.primary)),
+                 const Spacer(),
+                 Text(log.timestamp, style: TextStyle(fontSize: 8, color: Colors.white10)),
+               ],
+             ),
+             const SizedBox(height: 12),
+             Text(log.message, style: const TextStyle(fontSize: 13, color: Colors.white, height: 1.5)),
+           ],
+         ),
+       );
+    }
+
+    // Default styling
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10, left: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(log.timestamp, style: GoogleFonts.firaCode(fontSize: 9, color: Colors.white12)),
+          const SizedBox(width: 8),
+          if (log.source == 'user') ...[
+             const Icon(Icons.person_outline, size: 10, color: Colors.white24),
+             const SizedBox(width: 6),
+          ],
+          Expanded(
+            child: Text(
+              log.message,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: log.source == 'user' ? FontWeight.bold : FontWeight.normal,
+                color: log.type == 'error' ? Colors.redAccent.withOpacity(0.7) : 
+                       log.type == 'success' ? Colors.greenAccent.withOpacity(0.7) :
+                       Colors.white60,
+              ),
             ),
           ),
         ],

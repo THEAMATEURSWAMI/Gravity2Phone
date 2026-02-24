@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../providers/workflows_provider.dart';
+import '../providers/agent_provider.dart';
 
 class WorkflowsScreen extends ConsumerStatefulWidget {
   const WorkflowsScreen({super.key});
@@ -34,6 +35,9 @@ class _WorkflowsScreenState extends ConsumerState<WorkflowsScreen>
       _selectedOwner = repo.owner;
       _selectedRepo = repo.name;
     });
+    // Set this as the global active context for the bridge
+    ref.read(agentProvider.notifier).setActiveRepo(repo.fullName);
+    
     ref.read(workflowsProvider.notifier).fetchWorkflows(repo.owner, repo.name);
     _tabController.animateTo(1);
   }
