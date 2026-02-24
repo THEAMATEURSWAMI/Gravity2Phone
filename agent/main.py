@@ -56,14 +56,19 @@ else:
 jobs: dict[str, dict] = {}
 monitored_workflows: dict[int, str] = {} # workflow_id: last_status
 approvals: dict[str, dict] = {} # approval_id: {"event": asyncio.Event(), "result": bool}
-log_queue = asyncio.Queue()
+log_listeners: List[asyncio.Queue] = []
 
 async def agent_log(message: str, type: str = "info"):
-    """Helper to print logs and send them to the real-time SSE stream."""
+    """Helper to print logs and broadcast them to all connected SSE listeners."""
     timestamp = datetime.now().strftime("%H:%M:%S")
     formatted = f"[{timestamp}] {message}"
     print(formatted)
-    await log_queue.put({"type": type, "message": formatted})
+    
+    log_data = {"type": type, "message": formatted}
+    
+    # Broadcast to all active listeners
+    for queue in log_listeners[:]: # Using a copy to avoid mutation errors
+        await queue.put(log_data)
 
 # Ensure we log the startup
 asyncio.create_task(agent_log("🚀 Antigravity Agent starting up..."))
@@ -148,6 +153,7 @@ class GitHubRepo(BaseModel):
     visibility: str # "public" or "private"
     description: Optional[str]
     url: str
+    updated_at: str
 
 class IntentRequest(BaseModel):
     intent: str
@@ -424,6 +430,7 @@ async def list_github_repos():
                     visibility=r.get("visibility", "private"),
                     description=r.get("description"),
                     url=r["html_url"],
+                    updated_at=r.get("updated_at", ""),
                 ))
 
             # 2. Fetch org repos
@@ -432,7 +439,7 @@ async def list_github_repos():
             if orgs_resp.status_code != 200:
                 await agent_log(f"⚠️ GitHub Organizations failed: {orgs_resp.status_code}", "warning")
                 # Don't fail the whole request if orgs fail, just skip them
-                return sorted(repos, key=lambda x: x.full_name.lower())
+                return sorted(repos, key=lambda x: x.updated_at, reverse=True)
             
             orgs_resp.raise_for_status()
             for org in orgs_resp.json():
@@ -452,9 +459,10 @@ async def list_github_repos():
                             visibility=r.get("visibility", "private"),
                             description=r.get("description"),
                             url=r["html_url"],
+                            updated_at=r.get("updated_at", ""),
                         ))
 
-            return sorted(repos, key=lambda x: x.full_name.lower())
+            return sorted(repos, key=lambda x: x.updated_at, reverse=True)
         except httpx.HTTPStatusError as e:
             raise HTTPException(status_code=e.response.status_code, detail=e.response.text)
         except Exception as e:
@@ -599,19 +607,25 @@ async def clear_job(job_id: str):
 
 @app.get("/logs", tags=["System"])
 async def stream_logs(request: Request):
-    """Real-time SSE stream of agent logs/chats."""
+    """Real-time SSE stream of agent logs/chats (Broadcast to all listeners)."""
+    queue = asyncio.Queue()
+    log_listeners.append(queue)
+    
     async def event_generator():
-        while True:
-            # Check if client is still connected
-            if await request.is_disconnected():
-                break
-            
-            # Get next log from queue
-            log = await log_queue.get()
-            yield {
-                "event": "log",
-                "data": json.dumps(log)
-            }
+        try:
+            while True:
+                if await request.is_disconnected():
+                    break
+                
+                log = await queue.get()
+                yield {
+                    "event": "log",
+                    "data": json.dumps(log)
+                }
+        finally:
+            # Clean up when client disconnects
+            if queue in log_listeners:
+                log_listeners.remove(queue)
 
     return EventSourceResponse(event_generator())
 
