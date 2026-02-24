@@ -247,6 +247,20 @@ class AgentNotifier extends StateNotifier<AgentState> {
     }
   }
 
+  Future<List<dynamic>> fetchRepos() async {
+    if (state.url.isEmpty || state.token.isEmpty) return [];
+    try {
+      final response = await http.get(
+        Uri.parse('${state.url}/repos'),
+        headers: {'X-API-Token': state.token},
+      );
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body);
+      }
+    } catch (_) {}
+    return [];
+  }
+
   Future<void> respondToApproval(String approvalId, bool accept) async {
     if (state.url.isEmpty || state.token.isEmpty) return;
     try {

@@ -1,17 +1,16 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_animate/flutter_animate.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import '../providers/agent_provider.dart';
-import '../providers/push_provider.dart';
-import '../providers/logs_provider.dart';
-import '../providers/quota_provider.dart';
 import 'settings_screen.dart';
 import 'workflows_screen.dart';
+import 'repo_selection_screen.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -181,33 +180,52 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                  ],
                                ),
                              ),
-                           if (agentState.activeRepo != null)
-                             Padding(
-                               padding: const EdgeInsets.only(top: 8),
-                               child: Container(
-                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                 decoration: BoxDecoration(
-                                   color: theme.colorScheme.primary.withOpacity(0.1),
-                                   borderRadius: BorderRadius.circular(4),
-                                   border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
-                                 ),
+                             GestureDetector(
+                               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RepoSelectionScreen())),
+                               child: Padding(
+                                 padding: const EdgeInsets.only(top: 8),
+                                 child: Container(
+                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                   decoration: BoxDecoration(
+                                     color: theme.colorScheme.primary.withOpacity(0.1),
+                                     borderRadius: BorderRadius.circular(4),
+                                     border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
+                                   ),
+                                   child: Row(
+                                     mainAxisSize: MainAxisSize.min,
+                                     children: [
+                                       Icon(Icons.folder_open, size: 8, color: theme.colorScheme.primary),
+                                       const SizedBox(width: 4),
+                                       Text(
+                                         agentState.activeRepo!.split('/').last.toUpperCase(),
+                                         style: TextStyle(
+                                           fontSize: 8,
+                                           color: theme.colorScheme.primary,
+                                           fontWeight: FontWeight.bold,
+                                           letterSpacing: 1,
+                                         ),
+                                       ),
+                                     ],
+                                   ),
+                                 ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
+                               ),
+                             )
+                           else
+                             GestureDetector(
+                               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RepoSelectionScreen())),
+                               child: Padding(
+                                 padding: const EdgeInsets.only(top: 8),
                                  child: Row(
-                                   mainAxisSize: MainAxisSize.min,
                                    children: [
-                                     Icon(Icons.folder_open, size: 8, color: theme.colorScheme.primary),
+                                     Icon(Icons.add_circle_outline, size: 8, color: theme.colorScheme.primary.withOpacity(0.3)),
                                      const SizedBox(width: 4),
                                      Text(
-                                       agentState.activeRepo!.split('/').last.toUpperCase(),
-                                       style: TextStyle(
-                                         fontSize: 8,
-                                         color: theme.colorScheme.primary,
-                                         fontWeight: FontWeight.bold,
-                                         letterSpacing: 1,
-                                       ),
+                                       'SELECT PROJECT',
+                                       style: TextStyle(fontSize: 8, color: theme.colorScheme.primary.withOpacity(0.3), fontWeight: FontWeight.bold, letterSpacing: 1),
                                      ),
                                    ],
                                  ),
-                               ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
+                               ),
                              ),
                            if (agentState.activeBuild != null)
                               Padding(
@@ -523,22 +541,95 @@ class _MascotAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
+    return SizedBox(
+      width: 32,
+      height: 32,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // The Energy Orbit (Visible when thinking)
+          if (isThinking)
+            Container(
+              width: 30,
+              height: 12,
+              decoration: BoxDecoration(
+                border: Border.all(color: Colors.blueAccent.withOpacity(0.5), width: 1.5),
+                borderRadius: const BorderRadius.all(Radius.elliptical(30, 12)),
+              ),
+            ).animate(onPlay: (c) => c.repeat()).rotate(duration: 2.seconds, end: 1),
+
+          // The Robot Head (Silver Sphere)
+          Container(
+            width: 20,
+            height: 20,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [
+                  Colors.white,
+                  Colors.grey.shade400,
+                  Colors.grey.shade600,
+                ],
+              ),
+              boxShadow: [
+                BoxShadow(color: Colors.blueAccent.withOpacity(0.3), blurRadius: 8, spreadRadius: 1),
+              ],
+            ),
+            child: Center(
+              // The Visor/Face
+              child: Container(
+                width: 14,
+                height: 8,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Center(
+                  // LED Eyes (Blinking)
+                  child: Row(
+                    mainAxisAlignment: MainValue.center,
+                    children: [
+                      _LedEye(isThinking: isThinking),
+                      const SizedBox(width: 2),
+                      _LedEye(isThinking: isThinking),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ).animate(onPlay: (c) => c.repeat(reverse: true))
+           .moveY(begin: -2, end: 2, duration: 2.seconds, curve: Curves.easeInOut),
+        ],
+      ),
+    );
+  }
+}
+
+class _LedEye extends StatelessWidget {
+  final bool isThinking;
+  const _LedEye({required this.isThinking});
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
-      width: 28,
-      height: 28,
+      width: 2,
+      height: 2,
       decoration: BoxDecoration(
+        color: isThinking ? Colors.amber : Colors.blueAccent,
         shape: BoxShape.circle,
-        color: Colors.white.withOpacity(0.05),
-        border: Border.all(color: Colors.white.withOpacity(0.1)),
+        boxShadow: [
+          BoxShadow(
+            color: (isThinking ? Colors.amber : Colors.blueAccent).withOpacity(0.8),
+            blurRadius: 2,
+          ),
+        ],
       ),
-      child: Center(
-        child: Icon(
-          isThinking ? Icons.hourglass_empty : Icons.face_retouching_natural,
-          size: 14,
-          color: isThinking ? Colors.amber : Colors.blueAccent,
-        ).animate(onPlay: (c) => isThinking ? c.repeat() : c.stop()).shimmer(duration: 1.seconds),
-      ),
-    ).animate().scale(delay: 200.ms).fadeIn();
+    ).animate(onPlay: (c) => c.repeat(reverse: true))
+     .scaleXY(begin: 1.0, end: 0.1, duration: 150.ms, delay: 3.seconds); // Blinking effect
   }
 }
 
