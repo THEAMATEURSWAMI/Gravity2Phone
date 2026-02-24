@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "com.theamateurswami.bridge_app"
+    namespace = "com.theamateurswami.gravity2phone.bridge"
     compileSdk = 36
     ndkVersion = "28.2.13676358"
 
@@ -23,7 +23,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.theamateurswami.bridge_app"
+        applicationId = "com.theamateurswami.gravity2phone.bridge"
         minSdk = 23
         targetSdk = 35
         versionCode = 1
