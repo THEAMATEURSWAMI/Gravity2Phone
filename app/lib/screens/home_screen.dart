@@ -181,55 +181,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                                  ],
                                ),
                              ),
-                          if (agentState.activeRepo != null)
-                             GestureDetector(
-                               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RepoSelectionScreen())),
-                               child: Padding(
-                                 padding: const EdgeInsets.only(top: 8),
-                                 child: Container(
-                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                   decoration: BoxDecoration(
-                                     color: theme.colorScheme.primary.withOpacity(0.1),
-                                     borderRadius: BorderRadius.circular(4),
-                                     border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
-                                   ),
-                                   child: Row(
-                                     mainAxisSize: MainAxisSize.min,
-                                     children: [
-                                       Icon(Icons.folder_open, size: 8, color: theme.colorScheme.primary),
-                                       const SizedBox(width: 4),
-                                       Text(
-                                         agentState.activeRepo!.split('/').last.toUpperCase(),
-                                         style: TextStyle(
-                                           fontSize: 8,
-                                           color: theme.colorScheme.primary,
-                                           fontWeight: FontWeight.bold,
-                                           letterSpacing: 1,
-                                         ),
-                                       ),
-                                     ],
-                                   ),
-                                 ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1),
-                               ),
-                             )
-                           else
-                             GestureDetector(
-                               onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RepoSelectionScreen())),
-                               child: Padding(
-                                 padding: const EdgeInsets.only(top: 8),
-                                 child: Row(
-                                   children: [
-                                     Icon(Icons.add_circle_outline, size: 8, color: theme.colorScheme.primary.withOpacity(0.3)),
-                                     const SizedBox(width: 4),
-                                     Text(
-                                       'SELECT PROJECT',
-                                       style: TextStyle(fontSize: 8, color: theme.colorScheme.primary.withOpacity(0.3), fontWeight: FontWeight.bold, letterSpacing: 1),
-                                     ),
-                                   ],
-                                 ),
-                               ),
-                             ),
-                           if (agentState.activeBuild != null)
+                          
+                          GestureDetector(
+                            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const RepoSelectionScreen())),
+                            child: Padding(
+                              padding: const EdgeInsets.only(top: 8),
+                              child: agentState.activeRepo != null 
+                                ? Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: theme.colorScheme.primary.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: theme.colorScheme.primary.withOpacity(0.2)),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.folder_open, size: 8, color: theme.colorScheme.primary),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          agentState.activeRepo!.split('/').last.toUpperCase(),
+                                          style: TextStyle(fontSize: 8, color: theme.colorScheme.primary, fontWeight: FontWeight.bold, letterSpacing: 1),
+                                        ),
+                                      ],
+                                    ),
+                                  ).animate().fadeIn(duration: 400.ms).slideX(begin: -0.1)
+                                : Row(
+                                    children: [
+                                      Icon(Icons.add_circle_outline, size: 8, color: theme.colorScheme.primary.withOpacity(0.3)),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'SELECT PROJECT',
+                                        style: TextStyle(fontSize: 8, color: theme.colorScheme.primary.withOpacity(0.3), fontWeight: FontWeight.bold, letterSpacing: 1),
+                                      ),
+                                    ],
+                                  ),
+                            ),
+                          ),
+                          
+                          if (agentState.activeBuild != null)
                               Padding(
                                 padding: const EdgeInsets.only(top: 8),
                                 child: GestureDetector(

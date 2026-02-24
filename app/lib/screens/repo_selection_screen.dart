@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter_animate/flutter_animate.dart';
 import '../providers/agent_provider.dart';
 
 class RepoSelectionScreen extends ConsumerStatefulWidget {
@@ -11,33 +10,37 @@ class RepoSelectionScreen extends ConsumerStatefulWidget {
 }
 
 class _RepoSelectionScreenState extends ConsumerState<RepoSelectionScreen> {
-  List<dynamic>? _repos;
+  List<dynamic> _repos = [];
   bool _isLoading = true;
   String? _error;
 
   @override
   void initState() {
     super.initState();
-    _loadRepos();
+    _fetchRepos();
   }
 
-  Future<void> _loadRepos() async {
+  Future<void> _fetchRepos() async {
     setState(() {
       _isLoading = true;
       _error = null;
     });
-
+    
     try {
       final repos = await ref.read(agentProvider.notifier).fetchRepos();
-      setState(() {
-        _repos = repos;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _repos = repos;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
-      setState(() {
-        _error = 'Failed to load projects. Check your connection.';
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _error = 'Failed to load repositories';
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -47,21 +50,15 @@ class _RepoSelectionScreenState extends ConsumerState<RepoSelectionScreen> {
     final theme = Theme.of(context);
 
     return Scaffold(
-      backgroundColor: Colors.black,
+      backgroundColor: const Color(0xFF0B0D12), // Corrected color literal
       appBar: AppBar(
-        title: Text(
-          'SELECT PROJECT',
-          style: theme.textTheme.labelLarge?.copyWith(
-            letterSpacing: 2,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
+        title: const Text('SELECT PROJECT', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, letterSpacing: 2)),
+        centerTitle: true,
         backgroundColor: Colors.transparent,
         elevation: 0,
-        centerTitle: true,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : _error != null
               ? Center(
                   child: Column(
@@ -69,118 +66,93 @@ class _RepoSelectionScreenState extends ConsumerState<RepoSelectionScreen> {
                     children: [
                       Text(_error!, style: const TextStyle(color: Colors.white54)),
                       const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: _loadRepos,
-                        child: const Text('RETRY'),
+                      TextButton(
+                        onPressed: _fetchRepos,
+                        child: Text('RETRY', style: TextStyle(color: theme.colorScheme.primary)),
                       ),
                     ],
                   ),
                 )
               : ListView.builder(
-                  padding: const EdgeInsets.all(24),
-                  itemCount: (_repos?.length ?? 0) + 1,
+                  padding: const EdgeInsets.all(16),
+                  itemCount: _repos.length,
                   itemBuilder: (context, index) {
-                    if (index == 0) {
-                      // Option to clear selection
-                      final isSelected = agentState.activeRepo == null;
-                      return _RepoTile(
-                        name: 'GLOBAL CONTEXT',
-                        description: 'No specific project folder',
-                        isSelected: isSelected,
+                    final repo = _repos[index];
+                    final String repoName = repo.toString();
+                    final bool isSelected = agentState.activeRepo == repoName;
+
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: InkWell(
                         onTap: () {
-                          ref.read(agentProvider.notifier).setActiveRepo(null);
+                          ref.read(agentProvider.notifier).setActiveRepo(repoName);
                           Navigator.pop(context);
                         },
-                      );
-                    }
-
-                    final repo = _repos![index - 1];
-                    final fullName = repo['full_name'];
-                    final name = repo['name'];
-                    final isSelected = agentState.activeRepo == fullName;
-
-                    return _RepoTile(
-                      name: name.toUpperCase(),
-                      description: fullName,
-                      isSelected: isSelected,
-                      onTap: () {
-                        ref.read(agentProvider.notifier).setActiveRepo(fullName);
-                        Navigator.pop(context);
-                      },
+                        borderRadius: BorderRadius.circular(12),
+                        child: Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: isSelected 
+                                ? theme.colorScheme.primary.withOpacity(0.1) 
+                                : Colors.white.withOpacity(0.03),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected 
+                                  ? theme.colorScheme.primary.withOpacity(0.3) 
+                                  : Colors.white.withOpacity(0.05),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected ? Icons.check_circle : Icons.folder_outlined,
+                                color: isSelected ? theme.colorScheme.primary : Colors.white38,
+                                size: 18,
+                              ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      repoName.split('/').last.toUpperCase(),
+                                      style: TextStyle(
+                                        color: isSelected ? theme.colorScheme.primary : Colors.white,
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 13,
+                                        letterSpacing: 1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      repoName,
+                                      style: const TextStyle(
+                                        color: Colors.white24,
+                                        fontSize: 10,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (isSelected)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: theme.colorScheme.primary.withOpacity(0.2),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'ACTIVE',
+                                    style: TextStyle(color: Colors.white, fontSize: 8, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
                     );
                   },
                 ),
-    );
-  }
-}
-
-class _RepoTile extends StatelessWidget {
-  final String name;
-  final String description;
-  final bool isSelected;
-  final VoidCallback onTap;
-
-  const _RepoTile({
-    required this.name,
-    required this.description,
-    required this.isSelected,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: GestureDetector(
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: isSelected ? theme.colorScheme.primary.withOpacity(0.1) : Colors.white.withOpacity(0.02),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: isSelected ? theme.colorScheme.primary : Colors.white.withOpacity(0.05),
-              width: 1,
-            ),
-          ),
-          child: Row(
-            children: [
-              Icon(
-                isSelected ? Icons.check_circle : Icons.folder_outlined,
-                color: isSelected ? theme.colorScheme.primary : Colors.white24,
-                size: 20,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: TextStyle(
-                        color: isSelected ? theme.colorScheme.primary : Colors.white70,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        letterSpacing: 1,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      description,
-                      style: const TextStyle(
-                        color: Colors.white24,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ).animate().fadeIn(delay: 50.ms).slideY(begin: 0.1),
     );
   }
 }

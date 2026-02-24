@@ -12,40 +12,33 @@ jobs:
       - name: Create google-services.json
         shell: python
         run: |
-          import base64
-          import os
-          import sys
+          import base64, os, sys
 
-          secret = os.environ.get("SECRET_DATA", "").strip()
-          if not secret:
-              print("Error: GOOGLE_SERVICES_JSON secret is empty")
+          raw_secret = os.environ.get("GOOGLE_SERVICES_JSON_RAW", "").strip()
+          if not raw_secret:
+              print("::error::GOOGLE_SERVICES_JSON secret is empty")
               sys.exit(1)
           
           try:
-              if secret.startswith("{"):
-                  data = secret.encode("utf-8")
-                  print("Detected raw JSON format")
+              # Handle raw JSON
+              if raw_secret.startswith("{"):
+                  data = raw_secret.encode("utf-8")
+                  print("Format: Raw JSON detected")
+              # Handle Base64
               else:
-                  secret = "".join(secret.split())
-                  data = base64.b64decode(secret, validate=True)
-                  print("Detected base64 format")
+                  clean_b64 = "".join(raw_secret.split())
+                  data = base64.b64decode(clean_b64)
+                  print("Format: Base64 detected")
               
               os.makedirs("app/android/app", exist_ok=True)
               with open("app/android/app/google-services.json", "wb") as f:
                   f.write(data)
-              print("Successfully created google-services.json")
+              print("Outcome: google-services.json written successfully")
           except Exception as e:
-              print(f"Error processing secret: {e}")
-              # Fallback: maybe it's partially corrupted or weirdly formatted, try without validate
-              try:
-                  data = base64.b64decode(secret)
-                  with open("app/android/app/google-services.json", "wb") as f:
-                      f.write(data)
-                  print("Created using fallback base64")
-              except:
-                  sys.exit(1)
+              print(f"::error::Failed to process secret: {e}")
+              sys.exit(1)
         env:
-          SECRET_DATA: ${{ secrets.GOOGLE_SERVICES_JSON }}
+          GOOGLE_SERVICES_JSON_RAW: ${{ secrets.GOOGLE_SERVICES_JSON }}
       
       - name: Setup Java
         uses: actions/setup-java@v4

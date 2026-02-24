@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-// --- Models ------------------------------------------------------------------
+// --- Data Models -------------------------------------------------------------
 
 class LogEntry {
   final String message;
@@ -18,6 +18,15 @@ class LogEntry {
     required this.type, 
     required this.timestamp,
   });
+
+  factory LogEntry.fromJson(Map<String, dynamic> json) {
+    return LogEntry(
+      message: json['message'] ?? '',
+      source: json['source'] ?? 'info',
+      type: json['type'] ?? 'info',
+      timestamp: json['timestamp'] ?? '',
+    );
+  }
 }
 
 class ModelQuota {
@@ -31,8 +40,6 @@ class ModelQuota {
     required this.resetSeconds,
   });
 }
-
-// --- State and Providers -----------------------------------------------------
 
 class AgentState {
   final String url;
@@ -83,32 +90,40 @@ class AgentState {
   }
 }
 
-// --- Status & Logs Stubs -----------------------------------------------------
+// --- Provider Notifiers ------------------------------------------------------
 
-final logsProvider = StateNotifierProvider<LogsNotifier, List<LogEntry>>((ref) => LogsNotifier());
 class LogsNotifier extends StateNotifier<List<LogEntry>> {
   LogsNotifier() : super([]);
   void clear() => state = [];
-  void startListening() {}
-  void fetchHistory({bool append = false}) {}
+  void startListening() {
+    // Logic for websocket or long polling
+  }
+  void fetchHistory({bool append = false}) {
+    // API logic for history
+  }
 }
 
-final quotaProvider = StateNotifierProvider<QuotaNotifier, List<ModelQuota>>((ref) => QuotaNotifier());
 class QuotaNotifier extends StateNotifier<List<ModelQuota>> {
   QuotaNotifier() : super([]);
-  void fetchQuotas() {}
+  void fetchQuotas() {
+    // API logic for quotas
+  }
 }
 
-final pushNotificationProvider = Provider((ref) => PushNotificationService());
 class PushNotificationService {
-  void initialize(dynamic context) {}
+  void initialize(dynamic context) {
+    // Push init logic
+  }
 }
 
-// --- Main Agent Provider -----------------------------------------------------
+// --- Global Providers --------------------------------------------------------
 
-final agentProvider = StateNotifierProvider<AgentNotifier, AgentState>((ref) {
-  return AgentNotifier();
-});
+final agentProvider = StateNotifierProvider<AgentNotifier, AgentState>((ref) => AgentNotifier());
+final logsProvider = StateNotifierProvider<LogsNotifier, List<LogEntry>>((ref) => LogsNotifier());
+final quotaProvider = StateNotifierProvider<QuotaNotifier, List<ModelQuota>>((ref) => QuotaNotifier());
+final pushNotificationProvider = Provider((ref) => PushNotificationService());
+
+// --- Main Controller ---------------------------------------------------------
 
 class AgentNotifier extends StateNotifier<AgentState> {
   Timer? _pollingTimer;
@@ -120,7 +135,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
 
   void _startPolling() {
     _pollingTimer?.cancel();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
+    _pollingTimer = Timer.periodic(const Duration(seconds: 30), (_) {
        if (state.url.isNotEmpty && state.isConnected) {
           checkConnection();
        }
@@ -135,18 +150,12 @@ class AgentNotifier extends StateNotifier<AgentState> {
 
   Future<void> _loadConfig() async {
     final prefs = await SharedPreferences.getInstance();
-    final url = prefs.getString('agent_url') ?? 'http://100.x.x.x:8742';
-    final token = prefs.getString('agent_token') ?? '';
-    final activeRepo = prefs.getString('active_repo');
-    final activeChatId = prefs.getString('active_chat_id') ?? 'main';
-    final activeModel = prefs.getString('active_model') ?? 'gemini-1.5-flash';
-    
     state = state.copyWith(
-      url: url, 
-      token: token, 
-      activeRepo: activeRepo, 
-      activeChatId: activeChatId,
-      activeModel: activeModel,
+      url: prefs.getString('agent_url') ?? 'http://100.x.x.x:8742', 
+      token: prefs.getString('agent_token') ?? '', 
+      activeRepo: prefs.getString('active_repo'), 
+      activeChatId: prefs.getString('active_chat_id') ?? 'main',
+      activeModel: prefs.getString('active_model') ?? 'gemini-1.5-flash',
     );
     checkConnection();
   }
@@ -161,11 +170,8 @@ class AgentNotifier extends StateNotifier<AgentState> {
 
   Future<void> setActiveRepo(String? repo) async {
     final prefs = await SharedPreferences.getInstance();
-    if (repo == null) {
-      await prefs.remove('active_repo');
-    } else {
-      await prefs.setString('active_repo', repo);
-    }
+    if (repo == null) await prefs.remove('active_repo');
+    else await prefs.setString('active_repo', repo);
     state = state.copyWith(activeRepo: repo);
   }
 
@@ -185,9 +191,9 @@ class AgentNotifier extends StateNotifier<AgentState> {
     if (state.url.isEmpty) return false;
     try {
       final repoQuery = state.activeRepo != null ? '?context_repo=${state.activeRepo}' : '';
-      final response = await http.get(Uri.parse('${state.url}/health$repoQuery')).timeout(const Duration(seconds: 3));
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
+      final resp = await http.get(Uri.parse('${state.url}/health$repoQuery')).timeout(const Duration(seconds: 3));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
         state = state.copyWith(
           isConnected: true, 
           deviceName: data['device'],
@@ -210,10 +216,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
     try {
       await http.post(
         Uri.parse('${state.url}/command'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Token': state.token,
-        },
+        headers: {'Content-Type': 'application/json', 'X-API-Token': state.token},
         body: jsonEncode({
           'command': command,
           'async_run': false,
@@ -221,8 +224,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
           'context_chat_id': state.activeChatId,
         }),
       );
-      state = state.copyWith(isExecuting: false);
-    } catch (e) {
+    } finally {
       state = state.copyWith(isExecuting: false);
     }
   }
@@ -233,10 +235,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
     try {
       await http.post(
         Uri.parse('${state.url}/chat'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Token': state.token,
-        },
+        headers: {'Content-Type': 'application/json', 'X-API-Token': state.token},
         body: jsonEncode({
           'message': message,
           'context_repo': state.activeRepo,
@@ -244,35 +243,21 @@ class AgentNotifier extends StateNotifier<AgentState> {
           'model_id': state.activeModel,
         }),
       );
-      state = state.copyWith(isExecuting: false);
-    } catch (e) {
+    } finally {
       state = state.copyWith(isExecuting: false);
     }
   }
 
   Future<void> uploadAsset(String filePath) async {
     if (state.url.isEmpty || state.token.isEmpty) return;
-    
     state = state.copyWith(isExecuting: true);
-    
     try {
-      final request = http.MultipartRequest('POST', Uri.parse('${state.url}/upload'));
-      request.headers['X-API-Token'] = state.token;
-      if (state.activeRepo != null) {
-        request.headers['X-Context-Repo'] = state.activeRepo!;
-      }
-      
-      request.files.add(await http.MultipartFile.fromPath('file', filePath));
-      
-      final streamedResponse = await request.send();
-      final response = await http.Response.fromStream(streamedResponse);
-      
-      if (response.statusCode != 200) {
-        // Log error to chat?
-      }
-      
-      state = state.copyWith(isExecuting: false);
-    } catch (e) {
+      final req = http.MultipartRequest('POST', Uri.parse('${state.url}/upload'));
+      req.headers['X-API-Token'] = state.token;
+      if (state.activeRepo != null) req.headers['X-Context-Repo'] = state.activeRepo!;
+      req.files.add(await http.MultipartFile.fromPath('file', filePath));
+      await req.send();
+    } finally {
       state = state.copyWith(isExecuting: false);
     }
   }
@@ -283,10 +268,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
     try {
       await http.post(
         Uri.parse('${state.url}/intent'),
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Token': state.token,
-        },
+        headers: {'Content-Type': 'application/json', 'X-API-Token': state.token},
         body: jsonEncode({
           'intent': intent,
           'params': params ?? {},
@@ -294,8 +276,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
           'context_chat_id': state.activeChatId,
         }),
       );
-      state = state.copyWith(isExecuting: false);
-    } catch (e) {
+    } finally {
       state = state.copyWith(isExecuting: false);
     }
   }
@@ -303,13 +284,8 @@ class AgentNotifier extends StateNotifier<AgentState> {
   Future<List<dynamic>> fetchRepos() async {
     if (state.url.isEmpty || state.token.isEmpty) return [];
     try {
-      final response = await http.get(
-        Uri.parse('${state.url}/repos'),
-        headers: {'X-API-Token': state.token},
-      );
-      if (response.statusCode == 200) {
-        return jsonDecode(response.body);
-      }
+      final resp = await http.get(Uri.parse('${state.url}/repos'), headers: {'X-API-Token': state.token});
+      if (resp.statusCode == 200) return jsonDecode(resp.body);
     } catch (_) {}
     return [];
   }
@@ -317,12 +293,7 @@ class AgentNotifier extends StateNotifier<AgentState> {
   Future<void> respondToApproval(String approvalId, bool accept) async {
     if (state.url.isEmpty || state.token.isEmpty) return;
     try {
-      await http.post(
-        Uri.parse('${state.url}/approve/$approvalId?accept=$accept'),
-        headers: {
-          'X-API-Token': state.token,
-        },
-      );
-    } catch (e) {}
+      await http.post(Uri.parse('${state.url}/approve/$approvalId?accept=$accept'), headers: {'X-API-Token': state.token});
+    } catch (_) {}
   }
 }
