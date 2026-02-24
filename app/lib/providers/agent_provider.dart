@@ -133,4 +133,19 @@ class AgentNotifier extends StateNotifier<AgentState> {
       state = state.copyWith(isExecuting: false, lastOutput: 'Connection failed: $e');
     }
   }
+
+  Future<void> respondToApproval(String approvalId, bool accept) async {
+    if (state.url.isEmpty || state.token.isEmpty) return;
+    
+    try {
+      await http.post(
+        Uri.parse('${state.url}/approve/$approvalId?accept=$accept'),
+        headers: {
+          'X-API-Token': state.token,
+        },
+      );
+    } catch (e) {
+      print('Failed to send approval: $e');
+    }
+  }
 }

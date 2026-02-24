@@ -52,6 +52,7 @@ else:
 # ─────────────────────────────────────────────────────────────────────────────
 jobs: dict[str, dict] = {}
 monitored_workflows: dict[int, str] = {} # workflow_id: last_status
+approvals: dict[str, dict] = {} # approval_id: {"event": asyncio.Event(), "result": bool}
 
 # ─────────────────────────────────────────────────────────────────────────────
 # App
@@ -146,6 +147,43 @@ async def send_ding(title: str, body: str, token: Optional[str] = None):
     except Exception as e:
         print(f"Failed to send Ding: {e}")
 
+async def request_approval(title: str, body: str, token: Optional[str] = None) -> bool:
+    """Send a notification and wait for the user to tap 'Accept' or 'Reject' on their phone."""
+    approval_id = str(uuid.uuid4())
+    event = asyncio.Event()
+    
+    approvals[approval_id] = {
+        "event": event,
+        "result": False,
+        "title": title,
+        "body": body
+    }
+
+    # Send notification with data payload for the app to recognize as an approval request
+    if firebase_admin._apps:
+        message = messaging.Message(
+            notification=messaging.Notification(title=title, body=body),
+            data={
+                "type": "approval_request",
+                "approval_id": approval_id,
+            },
+            token=token,
+            topic="all" if not token else None,
+        )
+        messaging.send(message)
+    else:
+        print(f"Approval Requested (No Firebase): {title} - {body} [ID: {approval_id}]")
+
+    # Wait for the user to respond via the /approve endpoint
+    try:
+        await asyncio.wait_for(event.wait(), timeout=300) # 5 minute timeout
+        return approvals[approval_id]["result"]
+    except asyncio.TimeoutError:
+        return False
+    finally:
+        if approval_id in approvals:
+            del approvals[approval_id]
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Execution Engine
 # ─────────────────────────────────────────────────────────────────────────────
@@ -205,7 +243,15 @@ async def _run_command(job_id: str, command: str, cwd: Optional[str]):
 async def handle_intent(intent: str, params: dict, background_tasks: BackgroundTasks):
     """Map natural language intents to complex shell scripts."""
     if intent == "update-site":
-        # The ultimate multi-step deploy workflow
+        # Example using the new interactive system
+        should_proceed = await request_approval(
+            "🚀 Deployment Request", 
+            "Execute 'git pull && npm install && npm run build && firebase deploy'?"
+        )
+        
+        if not should_proceed:
+            return {"status": "rejected"}
+
         command = "git pull; npm install; npm run build; firebase deploy"
         
         # We run this in the background and notify when done
@@ -286,6 +332,17 @@ async def notify_endpoint(req: NotificationRequest):
     """Send a manual push notification to the mobile app."""
     await send_ding(req.title, req.body, req.token)
     return {"status": "sent"}
+
+
+@app.post("/approve/{approval_id}", tags=["Notifications"], dependencies=[Depends(verify_token)])
+async def approve_endpoint(approval_id: str, accept: bool):
+    """Called by the mobile app to respond to a request_approval prompt."""
+    if approval_id not in approvals:
+        raise HTTPException(status_code=404, detail="Approval request expired or not found.")
+    
+    approvals[approval_id]["result"] = accept
+    approvals[approval_id]["event"].set()
+    return {"status": "success", "accepted": accept}
 
 
 @app.get("/workflows", tags=["GitHub"], dependencies=[Depends(verify_token)])

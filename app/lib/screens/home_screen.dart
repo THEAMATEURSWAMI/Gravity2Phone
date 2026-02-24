@@ -4,6 +4,7 @@ import 'package:flutter_animate/flutter_animate.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../providers/agent_provider.dart';
+import '../providers/push_provider.dart';
 import 'settings_screen.dart';
 import 'workflows_screen.dart';
 
@@ -23,6 +24,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   void initState() {
     super.initState();
     _initSpeech();
+    Future.microtask(() {
+      ref.read(pushNotificationProvider).initialize(context);
+    });
   }
 
   void _initSpeech() async {
