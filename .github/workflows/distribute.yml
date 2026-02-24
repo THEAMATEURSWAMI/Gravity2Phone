@@ -11,11 +11,12 @@ jobs:
       
       - name: Create google-services.json
         run: |
+          mkdir -p app/android/app
           if [ -z "${{ secrets.GOOGLE_SERVICES_JSON }}" ]; then
             echo "Error: GOOGLE_SERVICES_JSON secret is empty or not set"
             exit 1
           fi
-          printf "%s" "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > app/android/app/google-services.json
+          echo "${{ secrets.GOOGLE_SERVICES_JSON }}" | base64 --decode > app/android/app/google-services.json
       
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -39,17 +40,9 @@ jobs:
           cd app
           flutter build apk --debug
           
-      - name: Sanitize Firebase Token
-        id: sanitize
-        run: |
-          CLEAN_TOKEN=$(echo "${{ secrets.FIREBASE_TOKEN }}" | tr -d '\r\n ')
-          echo "::add-mask::$CLEAN_TOKEN"
-          echo "token=$CLEAN_TOKEN" >> $GITHUB_OUTPUT
-
       - name: Upload to Firebase App Distribution
         uses: w9jds/firebase-action@master
         with:
           args: appdistribution:distribute app/build/app/outputs/flutter-apk/app-debug.apk --app 1:304820269242:android:cf6228313dca45d6c5d283 --testers "noless42@gmail.com"
         env:
-          FIREBASE_TOKEN: ${{ steps.sanitize.outputs.token }}
-          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON }}
+          GCP_SA_KEY: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_JSON || secrets.FIREBASE_SERVICE_ACCOUNT }}
